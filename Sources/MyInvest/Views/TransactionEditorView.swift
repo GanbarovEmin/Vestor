@@ -13,6 +13,9 @@ struct TransactionEditorView: View {
     @State private var commission = "0"
     @State private var cashAmount = ""
     @State private var notes = ""
+    @State private var companyNameWasEdited = false
+    @State private var isApplyingCompanyName = false
+    @State private var lastAppliedCompanyName = ""
     @State private var isFetchingPrice = false
     @State private var errorMessage: String?
 
@@ -35,6 +38,11 @@ struct TransactionEditorView: View {
                             ticker = newValue.uppercased()
                         }
                     TextField("Название компании", text: $companyName)
+                        .onChange(of: companyName) { _, _ in
+                            if !isApplyingCompanyName {
+                                companyNameWasEdited = true
+                            }
+                        }
                 }
                 .disabled(!kind.affectsPosition && kind != .dividend)
 
@@ -95,6 +103,9 @@ struct TransactionEditorView: View {
         }
         .frame(width: 520)
         .frame(minHeight: 520)
+        .task(id: ticker.normalizedTicker) {
+            await resolveCompanyName(for: ticker.normalizedTicker)
+        }
     }
 
     private var canSave: Bool {
@@ -120,6 +131,34 @@ struct TransactionEditorView: View {
             }
             isFetchingPrice = false
         }
+    }
+
+    private func resolveCompanyName(for symbol: String) async {
+        guard !symbol.isEmpty, kind.affectsPosition || kind == .dividend else { return }
+
+        if let localName = store.bestCompanyName(for: symbol) {
+            applyCompanyName(localName)
+            return
+        }
+
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        guard !Task.isCancelled else { return }
+
+        if let profile = await store.resolveCompanyProfile(for: symbol) {
+            applyCompanyName(profile.companyName)
+        }
+    }
+
+    private func applyCompanyName(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard !companyNameWasEdited || companyName.isEmpty || companyName == lastAppliedCompanyName else { return }
+
+        isApplyingCompanyName = true
+        companyName = trimmed
+        lastAppliedCompanyName = trimmed
+        companyNameWasEdited = false
+        isApplyingCompanyName = false
     }
 
     private func save() {

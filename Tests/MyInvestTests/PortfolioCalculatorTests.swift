@@ -164,6 +164,45 @@ final class PortfolioCalculatorTests: XCTestCase {
         XCTAssertTrue(store.completedPlannedPurchases.isEmpty)
     }
 
+    @MainActor
+    func testCompanyNameAndLogoResolveFromLocalTransactions() {
+        let urls = temporaryStoreURLs()
+        let store = PortfolioStore(fileURL: urls.portfolio, plannedPurchasesURL: urls.plannedPurchases, cacheURL: urls.cache)
+        store.deleteTransactions(withIDs: Set(store.transactions.map(\.id)))
+
+        store.add(InvestmentTransaction(
+            ticker: "aapl",
+            companyName: "Apple Inc.",
+            purchaseDate: DateHelpers.csvDayFormatter.date(from: "2026-01-10")!,
+            shares: 1,
+            purchasePrice: 100,
+            commission: 0
+        ))
+
+        XCTAssertEqual(store.bestCompanyName(for: "AAPL"), "Apple Inc.")
+        XCTAssertEqual(store.companyLogoURL(for: "aapl")?.absoluteString, "https://financialmodelingprep.com/image-stock/AAPL.png")
+    }
+
+    @MainActor
+    func testNextExpectedDividendUsesRecentPaymentCadence() {
+        let urls = temporaryStoreURLs()
+        let store = PortfolioStore(fileURL: urls.portfolio, plannedPurchasesURL: urls.plannedPurchases, cacheURL: urls.cache)
+        store.deleteTransactions(withIDs: Set(store.transactions.map(\.id)))
+
+        let today = Date().startOfDay
+        let firstDate = Calendar.current.date(byAdding: .day, value: -181, to: today)!
+        let latestDate = Calendar.current.date(byAdding: .day, value: -90, to: today)!
+        let expectedDate = Calendar.current.date(byAdding: .day, value: 91, to: latestDate)!.startOfDay
+
+        store.add(InvestmentTransaction(kind: .dividend, ticker: "AAPL", companyName: "Apple Inc.", purchaseDate: firstDate, shares: 0, purchasePrice: 0, commission: 0, cashAmount: 0.25))
+        store.add(InvestmentTransaction(kind: .dividend, ticker: "AAPL", companyName: "Apple Inc.", purchaseDate: latestDate, shares: 0, purchasePrice: 0, commission: 0, cashAmount: 0.55))
+
+        XCTAssertEqual(store.totalDividendsReceived, 0.80, accuracy: 0.0001)
+        XCTAssertEqual(store.nextExpectedDividend?.ticker, "AAPL")
+        XCTAssertEqual(store.nextExpectedDividend?.expectedAmount ?? 0, 0.55, accuracy: 0.0001)
+        XCTAssertEqual(store.nextExpectedDividend?.expectedDate, expectedDate)
+    }
+
     private func temporaryStoreURLs() -> (portfolio: URL, plannedPurchases: URL, cache: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("myinvest-tests-\(UUID().uuidString)", isDirectory: true)

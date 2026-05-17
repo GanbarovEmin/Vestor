@@ -159,6 +159,14 @@ struct InvestmentTransaction: Identifiable, Codable, Hashable {
     }
 }
 
+struct DividendPaymentSummary: Identifiable, Hashable {
+    var id: String { "\(ticker)-\(expectedDate.timeIntervalSince1970)" }
+    var ticker: String
+    var companyName: String
+    var expectedDate: Date
+    var expectedAmount: Double
+}
+
 extension String {
     var normalizedTicker: String {
         trimmingCharacters(in: .whitespacesAndNewlines).uppercased()

@@ -11,6 +11,50 @@ struct GlassPanel<Content: View>: View {
     }
 }
 
+struct CompanyLogoView: View {
+    @EnvironmentObject private var store: PortfolioStore
+    var ticker: String
+    var size: CGFloat = 28
+    var cornerRadius: CGFloat = 8
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.thinMaterial)
+
+            if let url = store.companyLogoURL(for: ticker) {
+                AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.18))) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .padding(size * 0.16)
+                    case .failure:
+                        fallback
+                    case .empty:
+                        ProgressView()
+                            .controlSize(.small)
+                    @unknown default:
+                        fallback
+                    }
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .accessibilityHidden(true)
+    }
+
+    private var fallback: some View {
+        Text(String(ticker.normalizedTicker.prefix(1)))
+            .font(.system(size: max(11, size * 0.42), weight: .bold, design: .rounded))
+            .foregroundStyle(.secondary)
+    }
+}
+
 struct MetricTile: View {
     var title: String
     var value: String

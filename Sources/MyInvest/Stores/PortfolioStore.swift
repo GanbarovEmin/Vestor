@@ -6,6 +6,7 @@ final class PortfolioStore: ObservableObject {
     @Published private(set) var transactions: [InvestmentTransaction] = []
     @Published private(set) var quotesByTicker: [String: MarketQuote] = [:]
     @Published private(set) var priceHistoryByTicker: [String: [HistoricalPrice]] = [:]
+    @Published private(set) var companyProfilesByTicker: [String: CompanyProfile] = [:]
     @Published private(set) var plannedPurchases: [PlannedPurchase] = []
     @Published private(set) var positions: [PortfolioPosition] = []
     @Published private(set) var history: [PortfolioSnapshot] = []
@@ -69,6 +70,40 @@ final class PortfolioStore: ObservableObject {
         positions.reduce(0) { $0 + $1.realizedGainLoss }
     }
 
+    var dividendTransactions: [InvestmentTransaction] {
+        transactions.filter { $0.kind == .dividend }.sorted { $0.purchaseDate > $1.purchaseDate }
+    }
+
+    var totalDividendsReceived: Double {
+        dividendTransactions.reduce(0) { $0 + $1.displayAmount }
+    }
+
+    var nextExpectedDividend: DividendPaymentSummary? {
+        let grouped = Dictionary(grouping: dividendTransactions.filter { !$0.ticker.normalizedTicker.isEmpty }) {
+            $0.ticker.normalizedTicker
+        }
+        let today = Date().startOfDay
+
+        return grouped.compactMap { ticker, dividends -> DividendPaymentSummary? in
+            let sorted = dividends.sorted { $0.purchaseDate < $1.purchaseDate }
+            guard let latest = sorted.last else { return nil }
+            let interval = estimatedDividendIntervalDays(from: sorted)
+            var nextDate = Calendar.current.date(byAdding: .day, value: interval, to: latest.purchaseDate) ?? latest.purchaseDate
+            while nextDate < today {
+                nextDate = Calendar.current.date(byAdding: .day, value: interval, to: nextDate) ?? today
+            }
+
+            return DividendPaymentSummary(
+                ticker: ticker,
+                companyName: bestCompanyName(for: ticker) ?? latest.companyName,
+                expectedDate: nextDate.startOfDay,
+                expectedAmount: latest.displayAmount
+            )
+        }
+        .sorted { $0.expectedDate < $1.expectedDate }
+        .first
+    }
+
     var openPlannedPurchases: [PlannedPurchase] {
         plannedPurchases.filter { !$0.isCompleted }.sorted { $0.scheduledDate < $1.scheduledDate }
     }
@@ -92,6 +127,56 @@ final class PortfolioStore: ObservableObject {
                 .map(\.ticker.normalizedTicker)
                 .filter { !$0.isEmpty }
         )
+    }
+
+    func bestCompanyName(for ticker: String) -> String? {
+        let symbol = ticker.normalizedTicker
+        guard !symbol.isEmpty else { return nil }
+
+        if let cached = companyProfilesByTicker[symbol]?.companyName,
+           !cached.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return cached
+        }
+
+        return transactions
+            .reversed()
+            .first { $0.ticker.normalizedTicker == symbol && !$0.companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }?
+            .companyName
+    }
+
+    func companyLogoURL(for ticker: String) -> URL? {
+        let symbol = ticker.normalizedTicker
+        guard !symbol.isEmpty else { return nil }
+        return companyProfilesByTicker[symbol]?.logoURL ?? MarketDataAppClient.logoURL(for: symbol)
+    }
+
+    func resolveCompanyProfile(for ticker: String) async -> CompanyProfile? {
+        let symbol = ticker.normalizedTicker
+        guard !symbol.isEmpty else { return nil }
+
+        if let existing = companyProfilesByTicker[symbol] {
+            return existing
+        }
+
+        if let localName = bestCompanyName(for: symbol) {
+            let profile = CompanyProfile(
+                ticker: symbol,
+                companyName: localName,
+                logoURL: MarketDataAppClient.logoURL(for: symbol)
+            )
+            companyProfilesByTicker[symbol] = profile
+            saveMarketDataCache()
+            return profile
+        }
+
+        do {
+            let profile = try await marketData.fetchCompanyProfile(for: symbol)
+            companyProfilesByTicker[symbol] = profile
+            saveMarketDataCache()
+            return profile
+        } catch {
+            return nil
+        }
     }
 
     func add(_ transaction: InvestmentTransaction) {
@@ -144,6 +229,10 @@ final class PortfolioStore: ObservableObject {
                 async let history = marketData.fetchHistoricalPrices(for: ticker, from: firstDate, through: Date())
                 newQuotes[ticker] = try await quote
                 newHistory[ticker] = try await history
+                if companyProfilesByTicker[ticker] == nil,
+                   let profile = try? await marketData.fetchCompanyProfile(for: ticker) {
+                    companyProfilesByTicker[ticker] = profile
+                }
             } catch {
                 errors.append("\(ticker): \(error.localizedDescription)")
             }
@@ -152,11 +241,7 @@ final class PortfolioStore: ObservableObject {
         quotesByTicker = newQuotes
         priceHistoryByTicker = newHistory
         refreshPortfolioSnapshots()
-        cacheStore.save(MarketDataCache(
-            quotesByTicker: quotesByTicker,
-            priceHistoryByTicker: priceHistoryByTicker,
-            refreshedAt: Date()
-        ))
+        saveMarketDataCache(refreshedAt: Date())
         lastRefreshError = errors.isEmpty ? nil : errors.joined(separator: "\n")
     }
 
@@ -283,12 +368,33 @@ final class PortfolioStore: ObservableObject {
         let cache = cacheStore.load()
         quotesByTicker = cache.quotesByTicker
         priceHistoryByTicker = cache.priceHistoryByTicker
+        companyProfilesByTicker = cache.companyProfilesByTicker
     }
 
     private func refreshPortfolioSnapshots() {
         positions = PortfolioCalculator.positions(from: transactions, quotes: quotesByTicker)
         history = PortfolioCalculator.history(from: transactions, priceHistory: priceHistoryByTicker)
         transactionsNewestFirst = transactions.sorted { $0.purchaseDate > $1.purchaseDate }
+    }
+
+    private func saveMarketDataCache(refreshedAt: Date? = nil) {
+        cacheStore.save(MarketDataCache(
+            quotesByTicker: quotesByTicker,
+            priceHistoryByTicker: priceHistoryByTicker,
+            companyProfilesByTicker: companyProfilesByTicker,
+            refreshedAt: refreshedAt
+        ))
+    }
+
+    private func estimatedDividendIntervalDays(from dividends: [InvestmentTransaction]) -> Int {
+        let dates = dividends.map(\.purchaseDate).sorted()
+        let intervals = zip(dates, dates.dropFirst()).compactMap { previous, next -> Int? in
+            let days = Calendar.current.dateComponents([.day], from: previous, to: next).day ?? 0
+            return (30...370).contains(days) ? days : nil
+        }.sorted()
+
+        guard !intervals.isEmpty else { return 91 }
+        return intervals[intervals.count / 2]
     }
 
     private func loadPlannedPurchases() {

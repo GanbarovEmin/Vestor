@@ -24,6 +24,12 @@ struct HistoricalPrice: Identifiable, Codable, Hashable {
     var close: Double
 }
 
+struct CompanyProfile: Codable, Hashable {
+    var ticker: String
+    var companyName: String
+    var logoURL: URL?
+}
+
 struct PortfolioPosition: Identifiable, Hashable {
     var id: String { ticker }
     var ticker: String

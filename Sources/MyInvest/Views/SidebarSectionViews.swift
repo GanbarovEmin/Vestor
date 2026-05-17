@@ -54,7 +54,7 @@ struct DividendsView: View {
     @EnvironmentObject private var store: PortfolioStore
 
     private var dividends: [InvestmentTransaction] {
-        store.transactions.filter { $0.kind == .dividend }.sorted { $0.purchaseDate > $1.purchaseDate }
+        store.dividendTransactions
     }
 
     var body: some View {
@@ -63,10 +63,12 @@ struct DividendsView: View {
                 pageHeader("Дивиденды", subtitle: "Денежные выплаты по активам")
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 180, maximum: 300), spacing: 12)], spacing: 12) {
-                    MetricTile(title: "Всего получено", value: dividends.reduce(0) { $0 + $1.displayAmount }.formatted(AppFormatters.usd), detail: "\(dividends.count) выплат", systemImage: "dollarsign.circle", tone: .positive)
+                    MetricTile(title: "Всего получено", value: store.totalDividendsReceived.formatted(AppFormatters.usd), detail: "\(dividends.count) выплат", systemImage: "dollarsign.circle", tone: .positive)
                     MetricTile(title: "Последняя выплата", value: (dividends.first?.displayAmount ?? 0).formatted(AppFormatters.usd), detail: dividends.first?.ticker.isEmpty == false ? dividends.first?.ticker ?? "-" : "-", systemImage: "calendar")
                     MetricTile(title: "Див. доходность", value: dividendYield.formatted(AppFormatters.percent), detail: "К стоимости активов", systemImage: "percent")
                 }
+
+                nextDividendPanel
 
                 GlassPanel {
                     VStack(alignment: .leading, spacing: 12) {
@@ -90,7 +92,74 @@ struct DividendsView: View {
 
     private var dividendYield: Double {
         let total = store.securitiesMarketValue
-        return total == 0 ? 0 : dividends.reduce(0) { $0 + $1.displayAmount } / total
+        return total == 0 ? 0 : store.totalDividendsReceived / total
+    }
+
+    @ViewBuilder
+    private var nextDividendPanel: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Следующая выплата")
+                    .font(.headline)
+
+                if let next = store.nextExpectedDividend {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 14) {
+                            nextDividendIdentity(next)
+                            Spacer()
+                            nextDividendDateAndAmount(next)
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            nextDividendIdentity(next)
+                            nextDividendDateAndAmount(next)
+                        }
+                    }
+                } else {
+                    ContentUnavailableView("Нет истории выплат", systemImage: "calendar.badge.clock", description: Text("Добавьте дивиденды в историю, чтобы увидеть следующую ожидаемую дату."))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+            }
+        }
+    }
+
+    private func nextDividendIdentity(_ next: DividendPaymentSummary) -> some View {
+        HStack(spacing: 12) {
+            CompanyLogoView(ticker: next.ticker, size: 38, cornerRadius: 11)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(next.ticker)
+                    .font(.headline)
+                Text(next.companyName.isEmpty ? "Без названия" : next.companyName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text("Оценка по истории выплат")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func nextDividendDateAndAmount(_ next: DividendPaymentSummary) -> some View {
+        HStack(spacing: 18) {
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(next.expectedDate, format: AppFormatters.compactDate)
+                    .font(.headline)
+                Text("дата")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(next.expectedAmount.formatted(AppFormatters.usd))
+                    .font(.headline)
+                    .foregroundStyle(.green)
+                    .monospacedDigit()
+                Text("сумма")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
@@ -227,9 +296,7 @@ private struct PositionSummaryRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: position.ticker == "AAPL" ? "apple.logo" : "building.2")
-                .frame(width: 28, height: 28)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            CompanyLogoView(ticker: position.ticker, size: 28, cornerRadius: 8)
             VStack(alignment: .leading, spacing: 2) {
                 Text(position.ticker)
                     .font(.headline)
@@ -266,9 +333,13 @@ private struct TransactionCompactRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: transaction.kind.systemImage)
-                .foregroundStyle(.blue)
-                .frame(width: 28)
+            if transaction.ticker.isEmpty {
+                Image(systemName: transaction.kind.systemImage)
+                    .foregroundStyle(.blue)
+                    .frame(width: 28)
+            } else {
+                CompanyLogoView(ticker: transaction.ticker, size: 28, cornerRadius: 8)
+            }
             Text(transaction.purchaseDate, format: AppFormatters.compactDate)
                 .foregroundStyle(.secondary)
                 .frame(width: 120, alignment: .leading)

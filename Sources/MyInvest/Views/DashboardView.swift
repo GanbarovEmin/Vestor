@@ -60,7 +60,6 @@ struct DashboardView: View {
             metrics
             chartPanel
             holdingsPanel
-            recentPurchasesPanel
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
@@ -137,6 +136,13 @@ struct DashboardView: View {
                 detail: "Свободный кэш",
                 systemImage: "wallet.pass"
             )
+            MetricTile(
+                title: "Дивиденды",
+                value: store.totalDividendsReceived.formatted(AppFormatters.usd),
+                detail: "Всего получено",
+                systemImage: "dollarsign.circle",
+                tone: .positive
+            )
         }
     }
 
@@ -192,6 +198,31 @@ struct DashboardView: View {
                     .interpolationMethod(.catmullRom)
                     .foregroundStyle(.blue)
                     .lineStyle(.init(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
+
+                    LineMark(
+                        x: .value("Дата", point.date),
+                        y: .value("Вложения", point.investedAmount)
+                    )
+                    .interpolationMethod(.linear)
+                    .foregroundStyle(Color.gray.opacity(0.95))
+                    .lineStyle(.init(lineWidth: 2.6, lineCap: .round, lineJoin: .round, dash: [7, 5]))
+
+                    if point.id == chartHistory.last?.id {
+                        PointMark(
+                            x: .value("Дата", point.date),
+                            y: .value("Вложения", point.investedAmount)
+                        )
+                        .foregroundStyle(Color.gray)
+                        .annotation(position: .trailing, alignment: .center) {
+                            Text(point.investedAmount.formatted(AppFormatters.usd))
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .monospacedDigit()
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 4)
+                                .background(Color.gray, in: Capsule())
+                        }
+                    }
 
                     if point.id == chartHistory.last?.id {
                         PointMark(
@@ -272,39 +303,6 @@ struct DashboardView: View {
         }
     }
 
-    private var recentPurchasesPanel: some View {
-        GlassPanel {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Последние сделки")
-                    .font(.headline)
-
-                ForEach(store.transactionsNewestFirst.prefix(5)) { transaction in
-                    HStack {
-                        Text(transaction.purchaseDate, format: AppFormatters.compactDate)
-                            .frame(width: 120, alignment: .leading)
-                            .foregroundStyle(.secondary)
-                        Text(transaction.ticker)
-                            .font(.headline)
-                            .frame(width: 70, alignment: .leading)
-                        Text(transaction.companyName.isEmpty ? "Без названия" : transaction.companyName)
-                            .lineLimit(1)
-                        Spacer()
-                        Text(transaction.kind.title)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 96, alignment: .leading)
-                        Text(transaction.kind.affectsPosition ? transaction.shares.formatted(AppFormatters.shares) : "-")
-                            .frame(width: 80, alignment: .trailing)
-                        Text(transaction.kind.affectsPosition ? transaction.purchasePrice.formatted(AppFormatters.price) : transaction.displayAmount.formatted(AppFormatters.usd))
-                            .frame(width: 130, alignment: .trailing)
-                    }
-                    .font(.caption)
-                    .monospacedDigit()
-                    .padding(.vertical, 5)
-                }
-            }
-        }
-    }
-
     private var positionInspector: some View {
         ScrollView {
             positionInspectorContent
@@ -319,9 +317,7 @@ struct DashboardView: View {
             if let position = selectedPosition {
                 GlassPanel {
                     HStack(alignment: .top, spacing: 12) {
-                        tickerIcon(position.ticker)
-                            .font(.system(size: 32))
-                            .frame(width: 42, height: 42)
+                        CompanyLogoView(ticker: position.ticker, size: 42, cornerRadius: 12)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(position.ticker)
@@ -454,16 +450,6 @@ struct DashboardView: View {
         store.securitiesMarketValue == 0 ? 0 : position.marketValue / store.securitiesMarketValue
     }
 
-    @ViewBuilder
-    private func tickerIcon(_ ticker: String) -> some View {
-        if ticker == "AAPL" {
-            Image(systemName: "apple.logo")
-        } else {
-            Text(String(ticker.prefix(1)))
-                .font(.title2.weight(.bold))
-        }
-    }
-
     private func filteredPrices(for ticker: String, range: ChartRange) -> [HistoricalPrice] {
         let prices = store.priceHistoryByTicker[ticker] ?? []
         guard let cutoff = range.cutoffDate(relativeTo: prices.last?.date ?? Date()) else {
@@ -535,11 +521,7 @@ private struct PositionRow: View {
     var body: some View {
         HStack {
             HStack(spacing: 9) {
-                if position.ticker == "AAPL" {
-                    Image(systemName: "apple.logo")
-                } else {
-                    Image(systemName: "building.2")
-                }
+                CompanyLogoView(ticker: position.ticker, size: 24, cornerRadius: 7)
                 Text(position.ticker)
                     .font(.headline)
             }

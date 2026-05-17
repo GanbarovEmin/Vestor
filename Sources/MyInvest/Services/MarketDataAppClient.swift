@@ -20,6 +20,7 @@ enum MarketDataError: LocalizedError {
 protocol MarketDataFetching {
     func fetchLatestQuote(for ticker: String) async throws -> MarketQuote
     func fetchHistoricalPrices(for ticker: String, from startDate: Date, through endDate: Date) async throws -> [HistoricalPrice]
+    func fetchCompanyProfile(for ticker: String) async throws -> CompanyProfile
 }
 
 struct MarketDataAppClient: MarketDataFetching {
@@ -107,6 +108,58 @@ struct MarketDataAppClient: MarketDataFetching {
 
         return prices.sorted { $0.date < $1.date }
     }
+
+    func fetchCompanyProfile(for ticker: String) async throws -> CompanyProfile {
+        let symbol = ticker.normalizedTicker
+        guard var components = URLComponents(string: "https://query1.finance.yahoo.com/v1/finance/search") else {
+            throw MarketDataError.invalidURL
+        }
+        components.queryItems = [
+            URLQueryItem(name: "q", value: symbol),
+            URLQueryItem(name: "quotesCount", value: "5"),
+            URLQueryItem(name: "newsCount", value: "0")
+        ]
+
+        guard let url = components.url else {
+            throw MarketDataError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 Vestor", forHTTPHeaderField: "User-Agent")
+        let cookie = cookieHeader.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cookie.isEmpty {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw MarketDataError.badResponse
+        }
+
+        let payload = try JSONDecoder().decode(YahooSearchResponse.self, from: data)
+        let match = payload.quotes.first { $0.symbol.normalizedTicker == symbol } ?? payload.quotes.first
+        guard let match else {
+            throw MarketDataError.noData(symbol)
+        }
+
+        let name = [match.longname, match.shortname, match.displayName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+
+        guard let name else {
+            throw MarketDataError.noData(symbol)
+        }
+
+        return CompanyProfile(
+            ticker: symbol,
+            companyName: name,
+            logoURL: Self.logoURL(for: symbol)
+        )
+    }
+
+    static func logoURL(for ticker: String) -> URL? {
+        URL(string: "https://financialmodelingprep.com/image-stock/\(ticker.normalizedTicker).png")
+    }
 }
 
 private struct YahooChartResponse: Decodable {
@@ -134,4 +187,15 @@ private struct YahooIndicators: Decodable {
 
 private struct YahooQuote: Decodable {
     var close: [Double?]
+}
+
+private struct YahooSearchResponse: Decodable {
+    var quotes: [YahooSearchQuote]
+}
+
+private struct YahooSearchQuote: Decodable {
+    var symbol: String
+    var shortname: String?
+    var longname: String?
+    var displayName: String?
 }

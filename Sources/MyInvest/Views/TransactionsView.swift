@@ -40,9 +40,7 @@ private struct TransactionRow: View {
 
     private var fullRow: some View {
         HStack(spacing: 16) {
-            Image(systemName: transaction.kind.systemImage)
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
+            transactionIcon(size: 28)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(transactionTitle)
@@ -91,9 +89,7 @@ private struct TransactionRow: View {
     private var compactRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Image(systemName: transaction.kind.systemImage)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20)
+                transactionIcon(size: 26)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(transactionTitle)
                         .font(.headline)
@@ -129,5 +125,16 @@ private struct TransactionRow: View {
             return transaction.notes
         }
         return "Без названия"
+    }
+
+    @ViewBuilder
+    private func transactionIcon(size: CGFloat) -> some View {
+        if transaction.ticker.normalizedTicker.isEmpty {
+            Image(systemName: transaction.kind.systemImage)
+                .foregroundStyle(.secondary)
+                .frame(width: size, height: size)
+        } else {
+            CompanyLogoView(ticker: transaction.ticker, size: size, cornerRadius: 8)
+        }
     }
 }

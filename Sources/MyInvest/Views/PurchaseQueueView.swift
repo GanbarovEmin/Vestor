@@ -147,6 +147,7 @@ private struct PlannedPurchaseRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
+                    CompanyLogoView(ticker: purchase.ticker, size: 24, cornerRadius: 7)
                     Text(purchase.ticker)
                         .font(.headline)
                     if !purchase.note.isEmpty {
@@ -200,8 +201,11 @@ private struct PlannedPurchaseRow: View {
                 .accessibilityLabel(purchase.isCompleted ? "Вернуть \(purchase.ticker) в очередь" : "Отметить \(purchase.ticker) выполненным")
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(purchase.ticker)
-                        .font(.headline)
+                    HStack(spacing: 7) {
+                        CompanyLogoView(ticker: purchase.ticker, size: 22, cornerRadius: 7)
+                        Text(purchase.ticker)
+                            .font(.headline)
+                    }
                     Text(purchase.companyName.isEmpty ? "Без названия" : purchase.companyName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -244,6 +248,9 @@ struct PlannedPurchaseEditorView: View {
     @State private var companyName = ""
     @State private var plannedAmount = ""
     @State private var note = ""
+    @State private var companyNameWasEdited = false
+    @State private var isApplyingCompanyName = false
+    @State private var lastAppliedCompanyName = ""
     @State private var errorMessage: String?
 
     var body: some View {
@@ -256,6 +263,11 @@ struct PlannedPurchaseEditorView: View {
                             ticker = newValue.uppercased()
                         }
                     TextField("Название", text: $companyName)
+                        .onChange(of: companyName) { _, _ in
+                            if !isApplyingCompanyName {
+                                companyNameWasEdited = true
+                            }
+                        }
                     TextField("Ориентировочная сумма", text: $plannedAmount)
                     TextField("Заметка, например Бонус", text: $note)
                 }
@@ -291,6 +303,9 @@ struct PlannedPurchaseEditorView: View {
         }
         .frame(width: 520)
         .frame(minHeight: 420)
+        .task(id: ticker.normalizedTicker) {
+            await resolveCompanyName(for: ticker.normalizedTicker)
+        }
     }
 
     private var canSave: Bool {
@@ -311,6 +326,34 @@ struct PlannedPurchaseEditorView: View {
             note: note
         ))
         dismiss()
+    }
+
+    private func resolveCompanyName(for symbol: String) async {
+        guard !symbol.isEmpty else { return }
+
+        if let localName = store.bestCompanyName(for: symbol) {
+            applyCompanyName(localName)
+            return
+        }
+
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        guard !Task.isCancelled else { return }
+
+        if let profile = await store.resolveCompanyProfile(for: symbol) {
+            applyCompanyName(profile.companyName)
+        }
+    }
+
+    private func applyCompanyName(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard !companyNameWasEdited || companyName.isEmpty || companyName == lastAppliedCompanyName else { return }
+
+        isApplyingCompanyName = true
+        companyName = trimmed
+        lastAppliedCompanyName = trimmed
+        companyNameWasEdited = false
+        isApplyingCompanyName = false
     }
 
     private func positive(_ value: String) -> Double? {

@@ -3,7 +3,35 @@ import Foundation
 struct MarketDataCache: Codable {
     var quotesByTicker: [String: MarketQuote] = [:]
     var priceHistoryByTicker: [String: [HistoricalPrice]] = [:]
+    var companyProfilesByTicker: [String: CompanyProfile] = [:]
     var refreshedAt: Date?
+
+    init(
+        quotesByTicker: [String: MarketQuote] = [:],
+        priceHistoryByTicker: [String: [HistoricalPrice]] = [:],
+        companyProfilesByTicker: [String: CompanyProfile] = [:],
+        refreshedAt: Date? = nil
+    ) {
+        self.quotesByTicker = quotesByTicker
+        self.priceHistoryByTicker = priceHistoryByTicker
+        self.companyProfilesByTicker = companyProfilesByTicker
+        self.refreshedAt = refreshedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case quotesByTicker
+        case priceHistoryByTicker
+        case companyProfilesByTicker
+        case refreshedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        quotesByTicker = try container.decodeIfPresent([String: MarketQuote].self, forKey: .quotesByTicker) ?? [:]
+        priceHistoryByTicker = try container.decodeIfPresent([String: [HistoricalPrice]].self, forKey: .priceHistoryByTicker) ?? [:]
+        companyProfilesByTicker = try container.decodeIfPresent([String: CompanyProfile].self, forKey: .companyProfilesByTicker) ?? [:]
+        refreshedAt = try container.decodeIfPresent(Date.self, forKey: .refreshedAt)
+    }
 }
 
 struct MarketDataCacheStore {
