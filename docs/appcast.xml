@@ -1,0 +1,30 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Vestor Updates</title>
+    <link>https://ganbarovemin.github.io/Vestor/</link>
+    <description>Vestor macOS app update feed.</description>
+    <language>en</language>
+    <item>
+      <title>Vestor 0.1.0</title>
+      <sparkle:version>1</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+# Vestor 0.1.0<br />
+<br />
+Initial public QA build.<br />
+<br />
+- Portfolio dashboard, goals, planned purchases, dividends, transactions, analytics, notifications, and settings.<br />
+- Local-first data storage in the user's Application Support folder.<br />
+- GitHub Releases based DMG distribution.<br />
+- Sparkle update feed prepared for future app updates.<br />
+      ]]></description>
+      <pubDate>Fri, 22 May 2026 08:04:52 +0000</pubDate>
+      <enclosure url="https://github.com/GanbarovEmin/Vestor/releases/download/v0.1.0/Vestor-0.1.0.dmg"
+                 sparkle:edSignature="HZNR0vrYyrF2w/TruAXmmZNmLgCBpTa5QkoRseDXpNifzXUTkjqFXBo0sWIBlJOhzKEOOZldzn5Xmw6NhFpEAA=="
+                 length="4089638"
+                 type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>
