@@ -91,6 +91,58 @@ final class PortfolioCalculatorTests: XCTestCase {
     }
 
     @MainActor
+    func testSearchAndAssetDetailUseTransactionsOnly() {
+        let urls = temporaryStoreURLs()
+        let store = PortfolioStore(
+            fileURL: urls.portfolio,
+            plannedPurchasesURL: urls.plannedPurchases,
+            cacheURL: urls.cache
+        )
+        store.deleteTransactions(withIDs: Set(store.transactions.map(\.id)))
+
+        store.add(InvestmentTransaction(
+            kind: .openingPosition,
+            ticker: "AAPL",
+            companyName: "Apple Inc.",
+            purchaseDate: DateHelpers.csvDayFormatter.date(from: "2026-01-10")!,
+            shares: 1,
+            purchasePrice: 100,
+            commission: 0
+        ))
+
+        XCTAssertEqual(store.search("apple").first?.ticker, "AAPL")
+        XCTAssertTrue(store.search("voo").isEmpty)
+        XCTAssertEqual(store.assetDetail(for: "AAPL")?.companyName, "Apple Inc.")
+        XCTAssertNil(store.assetDetail(for: "VOO"))
+    }
+
+    @MainActor
+    func testBrokerStyleCSVImportMapsCommonColumns() throws {
+        let urls = temporaryStoreURLs()
+        let store = PortfolioStore(
+            fileURL: urls.portfolio,
+            plannedPurchasesURL: urls.plannedPurchases,
+            cacheURL: urls.cache
+        )
+        let csvURL = urls.portfolio.deletingLastPathComponent().appendingPathComponent("broker.csv")
+        try FileManager.default.createDirectory(at: csvURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        Time,Action,Symbol,Description,Quantity,Execution Price,Fees,Net Amount
+        2026-02-01,Buy,AAPL,Apple Inc.,2,150,1,301
+        2026-02-02,Dividend,AAPL,Apple Inc.,0,0,0,0.50
+        """.write(to: csvURL, atomically: true, encoding: .utf8)
+
+        let preview = try store.previewCSVImport(from: csvURL)
+
+        XCTAssertEqual(preview.transactions.count, 2)
+        XCTAssertEqual(preview.transactions[0].kind, .buy)
+        XCTAssertEqual(preview.transactions[0].ticker, "AAPL")
+        XCTAssertEqual(preview.transactions[0].shares, 2)
+        XCTAssertEqual(preview.transactions[1].kind, .dividend)
+        XCTAssertEqual(preview.transactions[1].cashAmount ?? 0, 0.50)
+    }
+
+    @MainActor
     func testStoreMaintainsCachedSnapshotsAfterTransactionChanges() {
         let urls = temporaryStoreURLs()
         let store = PortfolioStore(fileURL: urls.portfolio, plannedPurchasesURL: urls.plannedPurchases, cacheURL: urls.cache)

@@ -1,14 +1,26 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var store: PortfolioStore
-    @State private var exportedURL: URL?
-    @State private var importPreview: CSVImportPreview?
+    @EnvironmentObject private var softwareUpdates: SoftwareUpdateController
 
     var body: some View {
         Form {
+            Section("Обновления") {
+                LabeledContent("Канал", value: "GitHub Releases")
+                Text("Приложение проверяет appcast на GitHub Pages и предлагает новую версию, когда опубликован свежий DMG.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    softwareUpdates.checkForUpdates()
+                } label: {
+                    Label("Проверить обновления", systemImage: "arrow.down.circle")
+                }
+                .disabled(!softwareUpdates.canCheckForUpdates)
+            }
+
             Section("Котировки") {
                 LabeledContent("Провайдер", value: "Yahoo Finance chart API")
                 Text("Приложение получает дневные цены и историю через публичный endpoint query1.finance.yahoo.com/v8/finance/chart. Провайдер изолирован в сервисе, чтобы позже заменить его на официальный Nasdaq/Data Link или брокерский API.")
@@ -41,23 +53,6 @@ struct SettingsView: View {
                 } label: {
                     Label("Показать файл данных", systemImage: "folder")
                 }
-
-                Button {
-                    do {
-                        exportedURL = try store.exportCSV()
-                    } catch {
-                        store.lastRefreshError = "Не удалось экспортировать CSV: \(error.localizedDescription)"
-                    }
-                } label: {
-                    Label("Экспорт CSV", systemImage: "square.and.arrow.up")
-                }
-
-                Button {
-                    selectCSVForImport()
-                } label: {
-                    Label("Импорт CSV", systemImage: "tray.and.arrow.down")
-                }
-
                 Button(role: .destructive) {
                     store.resetToStatementData()
                     Task { await store.refreshAll() }
@@ -65,12 +60,66 @@ struct SettingsView: View {
                     Label("Вернуть данные из выписки", systemImage: "arrow.counterclockwise")
                 }
 
-                if let exportedURL {
-                    LabeledContent("Последний экспорт") {
-                        Text(exportedURL.path)
-                            .textSelection(.enabled)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.trailing)
+                Text("Импорт и экспорт CSV теперь находятся в разделе «История сделок».")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Резервные копии") {
+                HStack {
+                    Button {
+                        store.refreshBackupFiles()
+                    } label: {
+                        Label("Обновить список", systemImage: "arrow.clockwise")
+                    }
+
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([store.backupDirectoryURL])
+                    } label: {
+                        Label("Показать папку", systemImage: "folder")
+                    }
+                }
+
+                if store.backupFiles.isEmpty {
+                    Text("Бэкапы появятся здесь после сохранения портфеля.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(store.backupFiles.prefix(8)) { backup in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(backup.url.lastPathComponent)
+                                    .lineLimit(1)
+                                Text("\(backup.createdAt.formatted(AppFormatters.compactDate)) • \(backup.size / 1024) KB")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button {
+                                store.restoreBackup(backup)
+                                Task { await store.refreshAll() }
+                            } label: {
+                                Label("Восстановить", systemImage: "arrow.counterclockwise")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("Журнал изменений") {
+                Button {
+                    _ = store.undoLastPortfolioChange()
+                } label: {
+                    Label("Откатить последнее изменение портфеля", systemImage: "arrow.uturn.backward")
+                }
+                .disabled(!store.changeJournal.contains { $0.beforeTransactions != nil })
+
+                ForEach(store.changeJournal.prefix(8)) { entry in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.summary)
+                            .font(.callout.weight(.semibold))
+                        Text("\(entry.action.rawValue) • \(entry.entity) • \(entry.createdAt.formatted(AppFormatters.compactDate))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -85,80 +134,5 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(20)
-        .sheet(item: $importPreview) { preview in
-            ImportPreviewView(preview: preview) {
-                store.importPreview(preview)
-                importPreview = nil
-                Task { await store.refreshAll() }
-            } onCancel: {
-                importPreview = nil
-            }
-        }
-    }
-
-    private func selectCSVForImport() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.commaSeparatedText]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                importPreview = try store.previewCSVImport(from: url)
-            } catch {
-                store.lastRefreshError = "Не удалось прочитать CSV: \(error.localizedDescription)"
-            }
-        }
-    }
-}
-
-private struct ImportPreviewView: View {
-    var preview: CSVImportPreview
-    var onImport: () -> Void
-    var onCancel: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Предпросмотр импорта")
-                    .font(.title2.weight(.semibold))
-                Text("\(preview.transactions.count) операций из \(preview.sourceURL.lastPathComponent)")
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
-
-            List(preview.transactions) { transaction in
-                HStack {
-                    Image(systemName: transaction.kind.systemImage)
-                        .foregroundStyle(.secondary)
-                    Text(transaction.purchaseDate, format: AppFormatters.compactDate)
-                        .frame(width: 120, alignment: .leading)
-                    Text(transaction.kind.title)
-                        .frame(width: 110, alignment: .leading)
-                    Text(transaction.ticker.isEmpty ? "-" : transaction.ticker)
-                        .font(.headline)
-                        .frame(width: 72, alignment: .leading)
-                    Spacer()
-                    Text(transaction.displayAmount.formatted(AppFormatters.usd))
-                        .monospacedDigit()
-                }
-                .padding(.vertical, 4)
-            }
-
-            Divider()
-
-            HStack {
-                Button("Отмена", action: onCancel)
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Импортировать", action: onImport)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(preview.transactions.isEmpty)
-            }
-            .padding(20)
-        }
-        .frame(width: 720, height: 520)
     }
 }

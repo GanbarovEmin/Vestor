@@ -3,7 +3,7 @@ import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
     case overview
-    case portfolio
+    case goals
     case purchaseQueue
     case tradeHistory
     case dividends
@@ -13,10 +13,22 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static let defaultSection: AppSection = .overview
+
+    static let primaryNavigation: [AppSection] = [
+        .overview,
+        .goals,
+        .purchaseQueue,
+        .tradeHistory,
+        .dividends,
+        .analytics,
+        .notifications
+    ]
+
     var title: String {
         switch self {
         case .overview: "Обзор"
-        case .portfolio: "Портфель"
+        case .goals: "Цели"
         case .purchaseQueue: "Очередь к покупке"
         case .tradeHistory: "История сделок"
         case .dividends: "Дивиденды"
@@ -29,7 +41,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .overview: "house.fill"
-        case .portfolio: "briefcase"
+        case .goals: "target"
         case .purchaseQueue: "calendar.badge.plus"
         case .tradeHistory: "clock"
         case .dividends: "dollarsign.circle"
@@ -40,54 +52,24 @@ enum AppSection: String, CaseIterable, Identifiable {
     }
 }
 
-enum PortfolioFilter: String, CaseIterable, Identifiable {
-    case main
-    case longTermGrowth
-    case technology
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .main: "Мой портфель"
-        case .longTermGrowth: "Долгосрочный рост"
-        case .technology: "Технологии"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .main: .blue
-        case .longTermGrowth: .indigo
-        case .technology: .purple
-        }
-    }
-}
-
 struct ContentView: View {
     @EnvironmentObject private var store: PortfolioStore
-    @SceneStorage("selected-section") private var selectedSectionRaw = AppSection.overview.rawValue
-    @SceneStorage("selected-portfolio-filter") private var selectedPortfolioFilterRaw = PortfolioFilter.main.rawValue
+    @State private var selectedSectionRaw = AppSection.defaultSection.rawValue
     @State private var isAddingTransaction = false
     @State private var isAddingPlannedPurchase = false
+    @State private var searchQuery = ""
+    @State private var assetDetailRoute: AssetDetailRoute?
 
     private var selectedSection: AppSection {
-        get { AppSection(rawValue: selectedSectionRaw) ?? .overview }
+        get { AppSection(rawValue: selectedSectionRaw) ?? AppSection.defaultSection }
         nonmutating set { selectedSectionRaw = newValue.rawValue }
-    }
-
-    private var selectedPortfolioFilter: PortfolioFilter {
-        get { PortfolioFilter(rawValue: selectedPortfolioFilterRaw) ?? .main }
-        nonmutating set { selectedPortfolioFilterRaw = newValue.rawValue }
     }
 
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 6) {
-                    VestorBrandIcon(size: 34)
-                    Text("Vestor")
-                        .font(.headline.weight(.semibold))
+                    VestorLogoView(width: 138, height: 46)
                     Text("Мой портфель")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -111,39 +93,10 @@ struct ContentView: View {
                     }
                 })) {
                     Section {
-                        ForEach([AppSection.overview, .portfolio, .purchaseQueue, .tradeHistory, .dividends, .analytics, .notifications]) { section in
+                        ForEach(AppSection.primaryNavigation) { section in
                             Label(section.title, systemImage: section.icon)
                                 .tag(section)
                         }
-                    }
-
-                    Section("Портфели") {
-                        ForEach(PortfolioFilter.allCases) { filter in
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(filter.color)
-                                    .frame(width: 8, height: 8)
-                                Text(filter.title)
-                                Spacer()
-                                if selectedPortfolioFilter == filter {
-                                    Image(systemName: "checkmark")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                selectedPortfolioFilter = filter
-                                selectedSection = .portfolio
-                            }
-                        }
-
-                        Button {
-                            selectedSection = .settings
-                        } label: {
-                            Label("Новый портфель", systemImage: "plus")
-                        }
-                        .buttonStyle(.plain)
                     }
 
                     Section {
@@ -184,26 +137,33 @@ struct ContentView: View {
             .navigationTitle("Vestor")
         } detail: {
             Group {
-                switch selectedSection {
-                case .overview:
-                    DashboardView(isAddingTransaction: $isAddingTransaction)
-                case .portfolio:
-                    PortfolioHoldingsView(filter: selectedPortfolioFilter)
-                case .purchaseQueue:
-                    PurchaseQueueView(isAddingPlannedPurchase: $isAddingPlannedPurchase)
-                case .tradeHistory:
-                    TransactionsView(isAddingTransaction: $isAddingTransaction)
-                case .dividends:
-                    DividendsView()
-                case .analytics:
-                    AnalyticsView()
-                case .notifications:
-                    NotificationsView()
-                case .settings:
-                    SettingsView()
+                if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    SearchResultsView(query: searchQuery) { ticker in
+                        assetDetailRoute = AssetDetailRoute(ticker: ticker)
+                    }
+                } else {
+                    switch selectedSection {
+                    case .overview:
+                        DashboardView(isAddingTransaction: $isAddingTransaction)
+                    case .goals:
+                        GoalsView()
+                    case .purchaseQueue:
+                        PurchaseQueueView(isAddingPlannedPurchase: $isAddingPlannedPurchase)
+                    case .tradeHistory:
+                        TransactionsView(isAddingTransaction: $isAddingTransaction)
+                    case .dividends:
+                        DividendsView()
+                    case .analytics:
+                        AnalyticsView()
+                    case .notifications:
+                        NotificationsView()
+                    case .settings:
+                        SettingsView()
+                    }
                 }
             }
             .navigationTitle(selectedSection.title)
+            .searchable(text: $searchQuery, prompt: "Поиск тикера, сделки, заметки")
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
@@ -236,11 +196,24 @@ struct ContentView: View {
             PlannedPurchaseEditorView()
                 .environmentObject(store)
         }
+        .sheet(item: $assetDetailRoute) { route in
+            AssetDetailView(ticker: route.ticker)
+                .environmentObject(store)
+        }
+        .sheet(isPresented: Binding(
+            get: { !store.setupState.isCompleted },
+            set: { _ in }
+        )) {
+            OnboardingView()
+                .environmentObject(store)
+        }
     }
 }
 
-private struct VestorBrandIcon: View {
-    let size: CGFloat
+private struct VestorLogoView: View {
+    let width: CGFloat
+    let height: CGFloat
+
     private var logoImage: NSImage? {
         if let image = NSImage(named: "VestorLogo") {
             return image
@@ -260,14 +233,15 @@ private struct VestorBrandIcon: View {
                     .resizable()
                     .interpolation(.high)
                     .antialiased(true)
+                    .scaledToFit()
             } else {
-                Image(systemName: "circle.grid.cross")
+                Image(systemName: "chart.line.uptrend.xyaxis")
                     .resizable()
+                    .scaledToFit()
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.teal)
             }
         }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+        .frame(width: width, height: height, alignment: .leading)
     }
 }

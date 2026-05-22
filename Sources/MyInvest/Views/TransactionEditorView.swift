@@ -3,6 +3,9 @@ import SwiftUI
 struct TransactionEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: PortfolioStore
+    var editingTransaction: InvestmentTransaction? = nil
+    var draftTransaction: InvestmentTransaction? = nil
+    var onSave: ((InvestmentTransaction) -> Void)? = nil
 
     @State private var kind: TransactionKind = .buy
     @State private var ticker = ""
@@ -91,18 +94,19 @@ struct TransactionEditorView: View {
 
                 Spacer()
 
-                Button("Добавить сделку") {
+                Button(editingTransaction == nil ? "Добавить сделку" : "Сохранить") {
                     save()
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .disabled(!canSave)
-                .accessibilityLabel("Добавить сделку")
+                .accessibilityLabel(editingTransaction == nil ? "Добавить сделку" : "Сохранить сделку")
             }
             .padding(20)
         }
         .frame(width: 520)
         .frame(minHeight: 520)
+        .onAppear(perform: hydrateFromInitialTransaction)
         .task(id: ticker.normalizedTicker) {
             await resolveCompanyName(for: ticker.normalizedTicker)
         }
@@ -178,6 +182,7 @@ struct TransactionEditorView: View {
         }
 
         let transaction = InvestmentTransaction(
+            id: editingTransaction?.id ?? UUID(),
             kind: kind,
             ticker: ticker,
             companyName: companyName,
@@ -189,11 +194,30 @@ struct TransactionEditorView: View {
             notes: notes
         )
 
-        store.add(transaction)
+        if let onSave {
+            onSave(transaction)
+        } else if editingTransaction == nil {
+            store.add(transaction)
+        } else {
+            store.update(transaction)
+        }
         Task {
             await store.refreshAll()
         }
         dismiss()
+    }
+
+    private func hydrateFromInitialTransaction() {
+        guard let transaction = editingTransaction ?? draftTransaction else { return }
+        kind = transaction.kind
+        ticker = transaction.ticker
+        companyName = transaction.companyName
+        purchaseDate = transaction.purchaseDate
+        shares = transaction.shares == 0 ? "" : transaction.shares.formatted(.number.precision(.fractionLength(0...9)))
+        price = transaction.purchasePrice == 0 ? "" : transaction.purchasePrice.formatted(.number.precision(.fractionLength(0...6)))
+        commission = transaction.commission.formatted(.number.precision(.fractionLength(0...2)))
+        cashAmount = transaction.cashAmount?.formatted(.number.precision(.fractionLength(0...2))) ?? ""
+        notes = transaction.notes
     }
 
     private func parsed(_ value: String) -> Double? {

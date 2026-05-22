@@ -1,52 +1,40 @@
 import Charts
 import SwiftUI
 
-struct PortfolioHoldingsView: View {
-    @EnvironmentObject private var store: PortfolioStore
-    var filter: PortfolioFilter
+private struct PortfolioDayMover: Identifiable, Hashable {
+    var id: String { ticker }
+    var ticker: String
+    var amount: Double
+    var percent: Double
+}
 
-    private var positions: [PortfolioPosition] {
-        switch filter {
-        case .longTermGrowth:
-            return store.positions.filter { $0.gainLossPercent >= 0.08 }
-        case .technology:
-            return store.positions.filter { ["AAPL", "MSFT", "NVDA"].contains($0.ticker) }
-        case .main:
-            return store.positions
-        }
-    }
+private struct CompactMoverRow: View {
+    var title: String
+    var mover: PortfolioDayMover?
+    var fallbackTone: Color
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                pageHeader("Портфель", subtitle: "Состав, вес и результат по активам")
-
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180, maximum: 300), spacing: 12)], spacing: 12) {
-                    MetricTile(title: "Стоимость", value: positions.reduce(0) { $0 + $1.marketValue }.formatted(AppFormatters.usd), detail: "\(positions.count) позиций", systemImage: "briefcase", tone: .accent)
-                    MetricTile(title: "Прибыль", value: positions.reduce(0) { $0 + $1.gainLoss }.formatted(AppFormatters.usd), detail: "Нереализовано", systemImage: "arrow.up.right", tone: positions.reduce(0) { $0 + $1.gainLoss } >= 0 ? .positive : .negative)
-                    MetricTile(title: "Кэш", value: store.cashBalance.formatted(AppFormatters.usd), detail: "Свободные деньги", systemImage: "wallet.pass")
-                }
-
-                GlassPanel {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Позиции")
-                            .font(.headline)
-                        ForEach(positions) { position in
-                            PositionSummaryRow(position: position, allocation: allocation(for: position))
-                            if position.id != positions.last?.id {
-                                Divider()
-                            }
-                        }
-                    }
-                }
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(mover?.ticker ?? "-")
+                    .font(.callout.weight(.semibold))
             }
-            .padding(22)
-        }
-    }
 
-    private func allocation(for position: PortfolioPosition) -> Double {
-        let total = positions.reduce(0) { $0 + $1.marketValue }
-        return total == 0 ? 0 : position.marketValue / total
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(mover?.amount.formatted(AppFormatters.usd) ?? "-")
+                    .font(.callout.weight(.semibold))
+                Text(mover?.percent.formatted(AppFormatters.percent) ?? "-")
+                    .font(.caption2)
+            }
+            .foregroundStyle(mover.map { $0.amount >= 0 ? Color.green : Color.red } ?? fallbackTone)
+            .monospacedDigit()
+        }
+        .padding(.vertical, 2)
     }
 }
 
@@ -169,7 +157,7 @@ struct AnalyticsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                pageHeader("Аналитика", subtitle: "Распределение, лидеры и риск концентрации")
+                pageHeader("Аналитика", subtitle: "Результат портфеля, распределение, лидеры и дневные движения")
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 260), spacing: 12)], spacing: 12) {
                     MetricTile(title: "Активы", value: "\(store.positions.count)", detail: "В портфеле", systemImage: "square.grid.2x2")
@@ -177,6 +165,9 @@ struct AnalyticsView: View {
                     MetricTile(title: "Реализовано", value: store.realizedGainLoss.formatted(AppFormatters.usd), detail: "От продаж", systemImage: "checkmark.seal")
                     MetricTile(title: "Кэш", value: store.cashBalance.formatted(AppFormatters.usd), detail: cashShare.formatted(AppFormatters.percent), systemImage: "banknote")
                 }
+
+                performancePanel
+                dailyMoversPanel
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 16) {
@@ -189,6 +180,8 @@ struct AnalyticsView: View {
                         profitLeaders
                     }
                 }
+
+                riskPanel
             }
             .padding(22)
         }
@@ -202,8 +195,83 @@ struct AnalyticsView: View {
         store.totalMarketValue == 0 ? 0 : store.cashBalance / store.totalMarketValue
     }
 
+    private var dayMovers: [PortfolioDayMover] {
+        store.positions.compactMap { position in
+            guard let quote = store.quotesByTicker[position.ticker],
+                  let previousClose = quote.previousClose,
+                  previousClose > 0
+            else { return nil }
+
+            let priceChange = quote.price - previousClose
+            return PortfolioDayMover(
+                ticker: position.ticker,
+                amount: position.shares * priceChange,
+                percent: priceChange / previousClose
+            )
+        }
+    }
+
+    private var bestDayMover: PortfolioDayMover? {
+        dayMovers.max { $0.percent < $1.percent }
+    }
+
+    private var worstDayMover: PortfolioDayMover? {
+        dayMovers.min { $0.percent < $1.percent }
+    }
+
+    private var largestPositiveContributor: PortfolioDayMover? {
+        dayMovers.max { $0.amount < $1.amount }
+    }
+
+    private var performancePanel: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Результат портфеля")
+                    .font(.headline)
+                let summary = store.performanceSummary
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                    AnalyticsReturnMetric(title: "Стоимость", value: summary.currentValue.formatted(AppFormatters.usd), tone: .primary)
+                    AnalyticsReturnMetric(title: "Вложено", value: summary.investedAmount.formatted(AppFormatters.usd), tone: .secondary)
+                    AnalyticsReturnMetric(title: "Нереализованная прибыль", value: summary.unrealizedGainLoss.formatted(AppFormatters.usd), tone: summary.unrealizedGainLoss >= 0 ? .green : .red)
+                    AnalyticsReturnMetric(title: "Реализовано", value: summary.realizedGainLoss.formatted(AppFormatters.usd), tone: summary.realizedGainLoss >= 0 ? .green : .red)
+                    AnalyticsReturnMetric(title: "Дивиденды", value: summary.dividends.formatted(AppFormatters.usd), tone: .green)
+                    AnalyticsReturnMetric(title: "Кэш", value: summary.cash.formatted(AppFormatters.usd), tone: .blue)
+                }
+            }
+        }
+    }
+
     private func allocation(for position: PortfolioPosition) -> Double {
         store.securitiesMarketValue == 0 ? 0 : position.marketValue / store.securitiesMarketValue
+    }
+
+    private var dailyMoversPanel: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Движение за день", systemImage: "arrow.up.arrow.down")
+                        .font(.headline)
+                    Spacer()
+                    Text(dayMovers.isEmpty ? "нет данных" : "\(dayMovers.count)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                if dayMovers.isEmpty {
+                    Text("Для расчета нужны текущая цена и previous close по активам.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 6)
+                } else {
+                    CompactMoverRow(title: "Плюс дня", mover: bestDayMover, fallbackTone: .green)
+                    Divider()
+                    CompactMoverRow(title: "Минус дня", mover: worstDayMover, fallbackTone: .red)
+                    Divider()
+                    CompactMoverRow(title: "Вклад в итог дня", mover: largestPositiveContributor, fallbackTone: .green)
+                }
+            }
+        }
     }
 
     private var allocationChart: some View {
@@ -239,6 +307,54 @@ struct AnalyticsView: View {
             }
         }
     }
+
+    private var riskPanel: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Риск концентрации")
+                    .font(.headline)
+
+                let sorted = store.positions.sorted { allocation(for: $0) > allocation(for: $1) }
+                ForEach(Array(sorted.prefix(5))) { position in
+                    HStack {
+                        CompanyLogoView(ticker: position.ticker, size: 26, cornerRadius: 8)
+                        Text(position.ticker)
+                            .font(.headline)
+                        Spacer()
+                        Text(allocation(for: position).formatted(AppFormatters.percent))
+                            .font(.headline)
+                            .monospacedDigit()
+                            .foregroundStyle(allocation(for: position) > 0.25 ? .orange : .primary)
+                    }
+                    .padding(.vertical, 6)
+                    if position.id != sorted.prefix(5).last?.id {
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct AnalyticsReturnMetric: View {
+    var title: String
+    var value: String
+    var tone: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline)
+                .foregroundStyle(tone)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
 }
 
 struct NotificationsView: View {
@@ -247,30 +363,63 @@ struct NotificationsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                pageHeader("Уведомления", subtitle: "Состояние данных и события, требующие внимания")
+                pageHeader("Уведомления", subtitle: "События, риски и состояние локальных данных")
 
                 GlassPanel {
                     VStack(alignment: .leading, spacing: 14) {
-                        NotificationRow(
-                            icon: store.lastRefreshError == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
-                            title: store.lastRefreshError == nil ? "Котировки обновлены" : "Есть ошибка обновления",
-                            detail: store.lastRefreshError ?? "Yahoo Finance cache доступен, данные сохранены локально.",
-                            tone: store.lastRefreshError == nil ? .green : .orange
-                        )
-                        Divider()
+                        HStack {
+                            Text("События")
+                                .font(.headline)
+                            Spacer()
+                            Button {
+                                Task {
+                                    await LocalNotificationService.schedulePortfolioNotifications(
+                                        alerts: store.alerts,
+                                        nextDividend: store.nextExpectedDividend
+                                    )
+                                }
+                            } label: {
+                                Label("Включить macOS", systemImage: "bell.badge")
+                            }
+                        }
+                        ForEach(store.alerts) { alert in
+                            NotificationRow(icon: alert.icon, title: alert.title, detail: alert.detail, tone: alert.severity.color)
+                            if alert.id != store.alerts.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+
+                GlassPanel {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Data Health")
+                            .font(.headline)
+
                         NotificationRow(
                             icon: "externaldrive.fill",
                             title: "Локальное хранение",
                             detail: store.dataFilePath,
                             tone: .blue
                         )
+
                         Divider()
-                        NotificationRow(
-                            icon: store.cashBalance < 10 ? "banknote" : "banknote.fill",
-                            title: store.cashBalance < 10 ? "Низкий свободный кэш" : "Кэш доступен",
-                            detail: store.cashBalance.formatted(AppFormatters.usd),
-                            tone: store.cashBalance < 10 ? .orange : .green
-                        )
+
+                        if store.dataHealthIssues.isEmpty {
+                            NotificationRow(
+                                icon: "checkmark.seal.fill",
+                                title: "Проверка данных без замечаний",
+                                detail: "Операции, котировки и бэкапы выглядят согласованно.",
+                                tone: .green
+                            )
+                        } else {
+                            ForEach(store.dataHealthIssues) { issue in
+                                NotificationRow(icon: issue.icon, title: issue.title, detail: issue.detail, tone: issue.severity.color)
+                                if issue.id != store.dataHealthIssues.last?.id {
+                                    Divider()
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -279,7 +428,7 @@ struct NotificationsView: View {
     }
 }
 
-private func pageHeader(_ title: String, subtitle: String) -> some View {
+func pageHeader(_ title: String, subtitle: String) -> some View {
     VStack(alignment: .leading, spacing: 5) {
         Text(title)
             .font(.largeTitle.weight(.semibold))

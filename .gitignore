@@ -4,3 +4,7 @@ dist/
 DerivedData/
 *.xcuserdata/
 screenshots/
+release/sparkle-private*.txt
+release/*.secret
+*.dmg
+*.sha256

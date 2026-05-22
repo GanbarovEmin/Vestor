@@ -1,0 +1,8 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Vestor Updates</title>
+    <link>https://ganbarovemin.github.io/Vestor/</link>
+    <description>Vestor macOS app update feed.</description>
+  </channel>
+</rss>

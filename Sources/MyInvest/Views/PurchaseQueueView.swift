@@ -3,16 +3,42 @@ import SwiftUI
 struct PurchaseQueueView: View {
     @EnvironmentObject private var store: PortfolioStore
     @Binding var isAddingPlannedPurchase: Bool
+    @State private var editingPurchase: PlannedPurchase?
+    @State private var convertingPurchase: PlannedPurchase?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                projectionPanel
                 upcomingPanel
                 completedPanel
             }
             .padding(22)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .sheet(item: $editingPurchase) { purchase in
+            PlannedPurchaseEditorView(editingPurchase: purchase)
+                .environmentObject(store)
+        }
+        .sheet(item: $convertingPurchase) { purchase in
+            TransactionEditorView(
+                draftTransaction: InvestmentTransaction(
+                    kind: .buy,
+                    ticker: purchase.ticker,
+                    companyName: purchase.companyName,
+                    purchaseDate: Date(),
+                    shares: 0,
+                    purchasePrice: 0,
+                    commission: 0,
+                    cashAmount: nil,
+                    notes: "План \(purchase.plannedAmount.formatted(AppFormatters.usd))" + (purchase.note.isEmpty ? "" : " • \(purchase.note)")
+                ),
+                onSave: { transaction in
+                    store.markPlannedPurchaseCompletedAndAddTransaction(purchase, transaction: transaction)
+                }
+            )
+            .environmentObject(store)
         }
     }
 
@@ -69,7 +95,7 @@ struct PurchaseQueueView: View {
                     Text("План покупок")
                         .font(.headline)
                     Spacer()
-                    Text("Первые 12 месяцев без изменений")
+                    Text("\(store.openPlannedPurchases.count) открытых")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -80,11 +106,47 @@ struct PurchaseQueueView: View {
                 } else {
                     VStack(spacing: 0) {
                         ForEach(store.openPlannedPurchases) { purchase in
-                            PlannedPurchaseRow(purchase: purchase, isCompleted: false)
+                            PlannedPurchaseRow(
+                                purchase: purchase,
+                                isCompleted: false,
+                                onEdit: { editingPurchase = purchase },
+                                onConvert: { convertingPurchase = purchase }
+                            )
                             if purchase.id != store.openPlannedPurchases.last?.id {
                                 Divider()
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var projectionPanel: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Проверка очереди покупок")
+                    .font(.headline)
+
+                let snapshots = store.projectedPlanSnapshots
+                ForEach(Array(snapshots.enumerated()), id: \.offset) { _, snapshot in
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .center, spacing: 14) {
+                            planSnapshotTitle(snapshot)
+                            Spacer()
+                            planSnapshotNumbers(snapshot)
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            planSnapshotTitle(snapshot)
+                            planSnapshotNumbers(snapshot)
+                        }
+                    }
+                    .padding(.vertical, 6)
+
+                    if snapshot.id != snapshots.last?.id {
+                        Divider()
                     }
                 }
             }
@@ -101,7 +163,12 @@ struct PurchaseQueueView: View {
 
                     VStack(spacing: 0) {
                         ForEach(store.completedPlannedPurchases) { purchase in
-                            PlannedPurchaseRow(purchase: purchase, isCompleted: true)
+                            PlannedPurchaseRow(
+                                purchase: purchase,
+                                isCompleted: true,
+                                onEdit: { editingPurchase = purchase },
+                                onConvert: { convertingPurchase = purchase }
+                            )
                             if purchase.id != store.completedPlannedPurchases.last?.id {
                                 Divider()
                             }
@@ -116,12 +183,47 @@ struct PurchaseQueueView: View {
         guard let purchase = store.nextPlannedPurchase else { return "нет открытых пунктов" }
         return purchase.scheduledDate.formatted(AppFormatters.monthYear) + " • " + purchase.plannedAmount.formatted(AppFormatters.usd)
     }
+
+    private func planSnapshotTitle(_ snapshot: ProjectedPlanSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("\(snapshot.horizonMonths) месяцев")
+                .font(.headline)
+            Text(snapshot.warnings.first ?? "Открытые покупки учтены в прогнозе цели")
+                .font(.caption)
+                .foregroundStyle(snapshot.warnings.isEmpty ? Color.secondary : Color.orange)
+                .lineLimit(2)
+        }
+    }
+
+    private func planSnapshotNumbers(_ snapshot: ProjectedPlanSnapshot) -> some View {
+        HStack(spacing: 18) {
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(snapshot.projectedInvestedAmount.formatted(AppFormatters.usd))
+                    .font(.headline)
+                    .monospacedDigit()
+                Text("покупки")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(snapshot.projectedCashNeed.formatted(AppFormatters.usd))
+                    .font(.headline)
+                    .foregroundStyle(snapshot.projectedCashNeed > 0 ? .orange : .green)
+                    .monospacedDigit()
+                Text("нужно кэша")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
 }
 
 private struct PlannedPurchaseRow: View {
     @EnvironmentObject private var store: PortfolioStore
     var purchase: PlannedPurchase
     var isCompleted: Bool
+    var onEdit: () -> Void
+    var onConvert: () -> Void
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -176,6 +278,23 @@ private struct PlannedPurchaseRow: View {
                 .monospacedDigit()
                 .frame(width: 110, alignment: .trailing)
 
+            Button {
+                onConvert()
+            } label: {
+                Image(systemName: "arrow.right.doc.on.clipboard")
+            }
+            .buttonStyle(.borderless)
+            .help("Создать сделку из плана")
+            .disabled(purchase.isCompleted)
+
+            Button {
+                onEdit()
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.borderless)
+            .help("Редактировать план")
+
             Button(role: .destructive) {
                 store.deletePlannedPurchases(withIDs: [purchase.id])
             } label: {
@@ -218,6 +337,23 @@ private struct PlannedPurchaseRow: View {
                     .font(.headline)
                     .monospacedDigit()
 
+                Button {
+                    onConvert()
+                } label: {
+                    Image(systemName: "arrow.right.doc.on.clipboard")
+                }
+                .buttonStyle(.borderless)
+                .disabled(purchase.isCompleted)
+                .accessibilityLabel("Создать сделку из плана \(purchase.ticker)")
+
+                Button {
+                    onEdit()
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Редактировать \(purchase.ticker)")
+
                 Button(role: .destructive) {
                     store.deletePlannedPurchases(withIDs: [purchase.id])
                 } label: {
@@ -242,6 +378,7 @@ private struct PlannedPurchaseRow: View {
 struct PlannedPurchaseEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: PortfolioStore
+    var editingPurchase: PlannedPurchase? = nil
 
     @State private var scheduledDate = Date()
     @State private var ticker = ""
@@ -291,7 +428,7 @@ struct PlannedPurchaseEditorView: View {
 
                 Spacer()
 
-                Button("Добавить в очередь") {
+                Button(editingPurchase == nil ? "Добавить в очередь" : "Сохранить") {
                     save()
                 }
                 .buttonStyle(.borderedProminent)
@@ -303,6 +440,7 @@ struct PlannedPurchaseEditorView: View {
         }
         .frame(width: 520)
         .frame(minHeight: 420)
+        .onAppear(perform: hydrateFromEditingPurchase)
         .task(id: ticker.normalizedTicker) {
             await resolveCompanyName(for: ticker.normalizedTicker)
         }
@@ -318,14 +456,31 @@ struct PlannedPurchaseEditorView: View {
             return
         }
 
-        store.addPlannedPurchase(PlannedPurchase(
+        let purchase = PlannedPurchase(
+            id: editingPurchase?.id ?? UUID(),
             scheduledDate: scheduledDate,
             ticker: ticker,
             companyName: companyName,
             plannedAmount: amount,
-            note: note
-        ))
+            note: note,
+            isCompleted: editingPurchase?.isCompleted ?? false,
+            createdAt: editingPurchase?.createdAt ?? Date()
+        )
+        if editingPurchase == nil {
+            store.addPlannedPurchase(purchase)
+        } else {
+            store.updatePlannedPurchase(purchase)
+        }
         dismiss()
+    }
+
+    private func hydrateFromEditingPurchase() {
+        guard let editingPurchase else { return }
+        scheduledDate = editingPurchase.scheduledDate
+        ticker = editingPurchase.ticker
+        companyName = editingPurchase.companyName
+        plannedAmount = editingPurchase.plannedAmount.formatted(.number.precision(.fractionLength(0...2)))
+        note = editingPurchase.note
     }
 
     private func resolveCompanyName(for symbol: String) async {
