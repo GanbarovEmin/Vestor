@@ -5,8 +5,7 @@ struct DashboardView: View {
     @EnvironmentObject private var store: PortfolioStore
     @Binding var isAddingTransaction: Bool
     @State private var selectedTicker: String?
-    @State private var selectedRange: ChartRange = .all
-    @State private var selectedChartDate: Date?
+    @State private var selectedRange: PortfolioChartRange = .year
     @State private var draftTransaction: InvestmentTransaction?
     @State private var assetDetailRoute: AssetDetailRoute?
 
@@ -106,21 +105,22 @@ struct DashboardView: View {
 
     private var daySummary: some View {
         GlassPanel {
+            let summary = store.dayMovementSummary
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 18) {
-                    DashboardFactItem(title: "Итог дня", value: dayGain.formatted(AppFormatters.usd), detail: dayGainPercent.formatted(AppFormatters.percent), tone: dayGain >= 0 ? .green : .red)
+                    DashboardFactItem(title: "Итог дня", value: summary.totalAmount.formatted(AppFormatters.usd), detail: summary.totalPercent.formatted(AppFormatters.percent), tone: summary.totalAmount >= 0 ? .green : .red)
                     Divider().frame(height: 34)
-                    DashboardFactItem(title: "Плюс дня", value: bestDayMover?.ticker ?? "-", detail: bestDayMover?.amount.formatted(AppFormatters.usd) ?? "-", tone: .green)
+                    DashboardFactItem(title: "Плюс дня", value: summary.bestByPercent?.ticker ?? "-", detail: summary.bestByPercent?.amount.formatted(AppFormatters.usd) ?? "-", tone: .green)
                     Divider().frame(height: 34)
-                    DashboardFactItem(title: "Минус дня", value: worstDayMover?.ticker ?? "-", detail: worstDayMover?.amount.formatted(AppFormatters.usd) ?? "-", tone: .red)
+                    DashboardFactItem(title: "Минус дня", value: summary.worstByPercent?.ticker ?? "-", detail: summary.worstByPercent?.amount.formatted(AppFormatters.usd) ?? "-", tone: .red)
                     Divider().frame(height: 34)
                     DashboardFactItem(title: "Котировки", value: dataFreshnessShortTitle, detail: lastQuoteDateText, tone: dataFreshnessColor)
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 10)], spacing: 10) {
-                    DashboardFactItem(title: "Итог дня", value: dayGain.formatted(AppFormatters.usd), detail: dayGainPercent.formatted(AppFormatters.percent), tone: dayGain >= 0 ? .green : .red)
-                    DashboardFactItem(title: "Плюс дня", value: bestDayMover?.ticker ?? "-", detail: bestDayMover?.amount.formatted(AppFormatters.usd) ?? "-", tone: .green)
-                    DashboardFactItem(title: "Минус дня", value: worstDayMover?.ticker ?? "-", detail: worstDayMover?.amount.formatted(AppFormatters.usd) ?? "-", tone: .red)
+                    DashboardFactItem(title: "Итог дня", value: summary.totalAmount.formatted(AppFormatters.usd), detail: summary.totalPercent.formatted(AppFormatters.percent), tone: summary.totalAmount >= 0 ? .green : .red)
+                    DashboardFactItem(title: "Плюс дня", value: summary.bestByPercent?.ticker ?? "-", detail: summary.bestByPercent?.amount.formatted(AppFormatters.usd) ?? "-", tone: .green)
+                    DashboardFactItem(title: "Минус дня", value: summary.worstByPercent?.ticker ?? "-", detail: summary.worstByPercent?.amount.formatted(AppFormatters.usd) ?? "-", tone: .red)
                     DashboardFactItem(title: "Котировки", value: dataFreshnessShortTitle, detail: lastQuoteDateText, tone: dataFreshnessColor)
                 }
             }
@@ -168,13 +168,6 @@ struct DashboardView: View {
                 tone: store.totalGainLoss >= 0 ? .positive : .negative
             )
             MetricTile(
-                title: "Прибыль за день",
-                value: dayGain.formatted(AppFormatters.usd),
-                detail: dayGainPercent.formatted(AppFormatters.percent),
-                systemImage: "sun.max",
-                tone: dayGain >= 0 ? .positive : .negative
-            )
-            MetricTile(
                 title: "Вложения",
                 value: store.totalInvested.formatted(AppFormatters.usd),
                 detail: "Себестоимость",
@@ -216,49 +209,33 @@ struct DashboardView: View {
 
                 Chart {
                     ForEach(chartHistory) { point in
-                        AreaMark(
-                            x: .value("Дата", point.date),
-                            yStart: .value("Нижняя граница", chartYDomain.lowerBound),
-                            yEnd: .value("Стоимость", point.marketValue)
-                        )
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    chartTone.opacity(0.24),
-                                    chartTone.opacity(0.07),
-                                    .clear
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-
                         LineMark(
                             x: .value("Дата", point.date),
                             y: .value("Стоимость", point.marketValue)
                         )
-                        .interpolationMethod(.catmullRom)
+                        .interpolationMethod(.linear)
                         .foregroundStyle(chartTone)
                         .lineStyle(.init(lineWidth: 2.7, lineCap: .round, lineJoin: .round))
+
+                        LineMark(
+                            x: .value("Дата", point.date),
+                            y: .value("Вложено", point.investedAmount)
+                        )
+                        .interpolationMethod(.linear)
+                        .foregroundStyle(.secondary.opacity(0.62))
+                        .lineStyle(.init(lineWidth: 1.5, dash: [5, 5]))
                     }
 
-                    if let selectedChartPoint {
-                        RuleMark(x: .value("Дата", selectedChartPoint.date))
-                            .foregroundStyle(.secondary.opacity(0.45))
-                            .lineStyle(.init(lineWidth: 1, dash: [4, 4]))
-
+                    ForEach(chartHistory.filter { $0.transactionAmount > 0 }) { point in
                         PointMark(
-                            x: .value("Дата", selectedChartPoint.date),
-                            y: .value("Стоимость", selectedChartPoint.marketValue)
+                            x: .value("Дата сделки", point.date),
+                            y: .value("Стоимость", point.marketValue)
                         )
-                        .foregroundStyle(chartTone)
-                        .annotation(position: .top, alignment: .leading) {
-                            ChartPointTooltip(point: selectedChartPoint)
-                        }
+                        .foregroundStyle(.blue)
+                        .symbolSize(28)
                     }
                 }
                 .chartYScale(domain: chartYDomain)
-                .chartXSelection(value: $selectedChartDate)
                 .chartYAxis {
                     AxisMarks(position: .leading) { value in
                         AxisGridLine()
@@ -273,9 +250,6 @@ struct DashboardView: View {
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 6))
                 }
-                .chartPlotStyle { plotArea in
-                    plotArea.padding(.trailing, 70)
-                }
                 .frame(height: 300)
             }
         }
@@ -286,10 +260,13 @@ struct DashboardView: View {
             Text("Динамика портфеля")
                 .font(.headline)
             HStack(spacing: 16) {
-                Label(store.totalMarketValue.formatted(AppFormatters.usd), systemImage: "minus")
+                Label(store.totalMarketValue.formatted(AppFormatters.usd), systemImage: "chart.line.uptrend.xyaxis")
                     .foregroundStyle(chartTone)
-                Text(chartPeriodChange.formatted(AppFormatters.percent))
-                    .foregroundStyle(chartPeriodChange >= 0 ? .green : .red)
+                Text("результат \(signedCurrency(chartResultChange))")
+                    .foregroundStyle(chartResultChange >= 0 ? .green : .red)
+                    .monospacedDigit()
+                Text("вложено \(signedCurrency(chartInvestedChange))")
+                    .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
             .font(.caption)
@@ -298,7 +275,7 @@ struct DashboardView: View {
 
     private var chartControls: some View {
         Picker("Период", selection: $selectedRange) {
-            ForEach(ChartRange.allCases) { range in
+            ForEach(PortfolioChartRange.allCases) { range in
                 Text(range.title).tag(range)
             }
         }
@@ -412,176 +389,6 @@ struct DashboardView: View {
         }
     }
 
-    private var positionInspector: some View {
-        ScrollView {
-            positionInspectorContent
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var positionInspectorContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let position = selectedPosition {
-                GlassPanel {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(alignment: .top, spacing: 12) {
-                            CompanyLogoView(ticker: position.ticker, size: 42, cornerRadius: 12)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(position.ticker)
-                                    .font(.title2.weight(.semibold))
-                                Text(position.companyName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "star")
-                                .foregroundStyle(.secondary)
-                        }
-
-                        HStack(spacing: 8) {
-                            Button {
-                                draftTransaction = buyDraft(for: position)
-                            } label: {
-                                Label("Купить", systemImage: "plus.circle")
-                            }
-                            .buttonStyle(.borderedProminent)
-
-                            Button {
-                                draftTransaction = dividendDraft(for: position)
-                            } label: {
-                                Label("Дивиденд", systemImage: "dollarsign.circle")
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button {
-                                assetDetailRoute = AssetDetailRoute(ticker: position.ticker)
-                            } label: {
-                                Label("Detail", systemImage: "sidebar.right")
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        .controlSize(.small)
-                    }
-                }
-
-                GlassPanel {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Текущая цена")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        HStack(alignment: .firstTextBaseline) {
-                            Text((position.currentPrice ?? position.averageCost).formatted(AppFormatters.price))
-                                .font(.title2.weight(.semibold))
-                                .monospacedDigit()
-                            Spacer()
-                            if let quote = store.quotesByTicker[position.ticker],
-                               let dayChange = quote.dayChange,
-                               let dayChangePercent = quote.dayChangePercent {
-                                Text(dayChange.formatted(AppFormatters.usd) + " (" + dayChangePercent.formatted(AppFormatters.percent) + ")")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(dayChange >= 0 ? .green : .red)
-                                    .monospacedDigit()
-                            }
-                        }
-                    }
-                }
-
-                GlassPanel {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 12)], spacing: 12) {
-                        InspectorMetric("Количество", position.shares.formatted(AppFormatters.shares))
-                        InspectorMetric("Стоимость", position.marketValue.formatted(AppFormatters.usd))
-                        InspectorMetric("Средняя", position.averageCost.formatted(AppFormatters.price))
-                        InspectorMetric("Прибыль", position.gainLoss.formatted(AppFormatters.usd), tone: position.gainLoss >= 0 ? .green : .red)
-                        InspectorMetric("Сделок", "\(assetDetail(for: position)?.transactions.count ?? 0)")
-                        InspectorMetric("Дивиденды", assetDetail(for: position)?.dividends.formatted(AppFormatters.usd) ?? "-", tone: .green)
-                    }
-                }
-
-                GlassPanel {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Доля в портфеле")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        HStack {
-                            Text(allocation(for: position).formatted(AppFormatters.percent))
-                                .font(.title3.weight(.semibold))
-                                .monospacedDigit()
-                            Spacer()
-                            Gauge(value: allocation(for: position)) {}
-                                .gaugeStyle(.accessoryCircularCapacity)
-                                .tint(.blue)
-                        }
-                    }
-                }
-
-                GlassPanel {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("\(position.ticker) за год")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Chart(filteredPrices(for: position.ticker, range: .year)) { price in
-                            LineMark(
-                                x: .value("Дата", price.date),
-                                y: .value("Цена", price.close)
-                            )
-                            .interpolationMethod(.catmullRom)
-                            .foregroundStyle(.blue)
-                            .lineStyle(.init(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
-                        }
-                        .chartXAxis(.hidden)
-                        .chartYAxis {
-                            AxisMarks(position: .trailing)
-                        }
-                        .frame(height: 135)
-                    }
-                }
-
-                Text("Yahoo Finance • цены в USD")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-            }
-        }
-    }
-
-    private var dayGain: Double {
-        store.positions.reduce(0) { partial, position in
-            guard let quote = store.quotesByTicker[position.ticker],
-                  let previousClose = quote.previousClose
-            else { return partial }
-            return partial + position.shares * (quote.price - previousClose)
-        }
-    }
-
-    private var dayGainPercent: Double {
-        let previousValue = store.securitiesMarketValue - dayGain
-        return previousValue == 0 ? 0 : dayGain / previousValue
-    }
-
-    private var dayMovers: [DashboardMover] {
-        store.positions.compactMap { position in
-            guard let quote = store.quotesByTicker[position.ticker],
-                  let previousClose = quote.previousClose
-            else { return nil }
-            let amount = position.shares * (quote.price - previousClose)
-            return DashboardMover(ticker: position.ticker, amount: amount)
-        }
-    }
-
-    private var bestDayMover: DashboardMover? {
-        dayMovers.max { $0.amount < $1.amount }
-    }
-
-    private var worstDayMover: DashboardMover? {
-        dayMovers.min { $0.amount < $1.amount }
-    }
-
     private var latestQuoteDate: Date? {
         store.quotesByTicker.values.map(\.asOf).max()
     }
@@ -623,20 +430,12 @@ struct DashboardView: View {
         return "бэкап \(backup.createdAt.formatted(AppFormatters.compactDate))"
     }
 
-    private var chartHistory: [PortfolioSnapshot] {
-        let history = store.history
-        guard let cutoff = selectedRange.cutoffDate(relativeTo: history.last?.date ?? Date()) else {
-            return history
-        }
-        let filtered = history.filter { $0.date >= cutoff }
-        if filtered.count >= 2 {
-            return filtered
-        }
-        return Array(history.suffix(2))
+    private var chartHistory: [PortfolioChartPoint] {
+        store.portfolioChartSeries(for: selectedRange)
     }
 
     private var chartYDomain: ClosedRange<Double> {
-        let values = chartHistory.map(\.marketValue)
+        let values = chartHistory.flatMap { [$0.marketValue, $0.investedAmount] }
         guard let minValue = values.min(), let maxValue = values.max() else {
             return 0...1
         }
@@ -645,26 +444,25 @@ struct DashboardView: View {
         return max(0, minValue - padding)...(maxValue + padding)
     }
 
-    private var chartPeriodChange: Double {
-        guard let first = chartHistory.first?.marketValue,
-              let last = chartHistory.last?.marketValue,
-              first > 0
+    private var chartResultChange: Double {
+        guard let first = chartHistory.first,
+              let last = chartHistory.last
         else { return 0 }
-        return (last - first) / first
+        return last.gainLoss - first.gainLoss
+    }
+
+    private var chartInvestedChange: Double {
+        guard let first = chartHistory.first,
+              let last = chartHistory.last
+        else { return 0 }
+        return last.investedAmount - first.investedAmount
     }
 
     private var chartTone: Color {
         guard chartHistory.count >= 2 else { return .blue }
-        if chartPeriodChange > 0 { return .green }
-        if chartPeriodChange < 0 { return .red }
+        if chartResultChange > 0 { return .green }
+        if chartResultChange < 0 { return .red }
         return .blue
-    }
-
-    private var selectedChartPoint: PortfolioSnapshot? {
-        guard let selectedChartDate else { return nil }
-        return chartHistory.min { lhs, rhs in
-            abs(lhs.date.timeIntervalSince(selectedChartDate)) < abs(rhs.date.timeIntervalSince(selectedChartDate))
-        }
     }
 
     private var capitalSlices: [CapitalSlice] {
@@ -726,11 +524,14 @@ struct DashboardView: View {
     }
 
     private func allocation(for position: PortfolioPosition) -> Double {
-        store.securitiesMarketValue == 0 ? 0 : position.marketValue / store.securitiesMarketValue
+        store.assetAllocation(for: position)
     }
 
-    private func assetDetail(for position: PortfolioPosition) -> AssetDetailSummary? {
-        store.assetDetail(for: position.ticker)
+    private func signedCurrency(_ value: Double) -> String {
+        let formatted = abs(value).formatted(AppFormatters.usd)
+        if value > 0 { return "+\(formatted)" }
+        if value < 0 { return "-\(formatted)" }
+        return formatted
     }
 
     private func buyDraft(for position: PortfolioPosition) -> InvestmentTransaction {
@@ -758,56 +559,6 @@ struct DashboardView: View {
         )
     }
 
-    private func filteredPrices(for ticker: String, range: ChartRange) -> [HistoricalPrice] {
-        let prices = store.priceHistoryByTicker[ticker.normalizedTicker] ?? []
-        guard let cutoff = range.cutoffDate(relativeTo: prices.last?.date ?? Date()) else {
-            return prices
-        }
-        let filtered = prices.filter { $0.date >= cutoff }
-        return filtered.count >= 2 ? filtered : Array(prices.suffix(2))
-    }
-}
-
-private enum ChartRange: String, CaseIterable, Identifiable {
-    case day
-    case month
-    case sixMonths
-    case year
-    case all
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .day: "1Д"
-        case .month: "1М"
-        case .sixMonths: "6М"
-        case .year: "1Г"
-        case .all: "Все"
-        }
-    }
-
-    func cutoffDate(relativeTo date: Date) -> Date? {
-        let calendar = Calendar.current
-        switch self {
-        case .day:
-            return calendar.date(byAdding: .day, value: -7, to: date)
-        case .month:
-            return calendar.date(byAdding: .month, value: -1, to: date)
-        case .sixMonths:
-            return calendar.date(byAdding: .month, value: -6, to: date)
-        case .year:
-            return calendar.date(byAdding: .year, value: -1, to: date)
-        case .all:
-            return nil
-        }
-    }
-}
-
-private struct DashboardMover: Identifiable, Hashable {
-    var id: String { ticker }
-    var ticker: String
-    var amount: Double
 }
 
 private struct CapitalSlice: Identifiable, Hashable {
@@ -869,39 +620,6 @@ private struct CapitalLegend: View {
     }
 }
 
-private struct ChartPointTooltip: View {
-    var point: PortfolioSnapshot
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(point.date, format: AppFormatters.compactDate)
-                .font(.caption.weight(.semibold))
-            tooltipRow("Стоимость", point.marketValue.formatted(AppFormatters.usd), tone: .primary)
-            tooltipRow("Вложено", point.investedAmount.formatted(AppFormatters.usd), tone: .secondary)
-            tooltipRow("Прибыль", point.gainLoss.formatted(AppFormatters.usd), tone: point.gainLoss >= 0 ? .green : .red)
-            tooltipRow("%", point.gainLossPercent.formatted(AppFormatters.percent), tone: point.gainLoss >= 0 ? .green : .red)
-        }
-        .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 1)
-        }
-    }
-
-    private func tooltipRow(_ title: String, _ value: String, tone: Color) -> some View {
-        HStack {
-            Text(title)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .foregroundStyle(tone)
-                .monospacedDigit()
-        }
-        .font(.caption2)
-    }
-}
-
 private struct PositionHeaderRow: View {
     var body: some View {
         HStack {
@@ -910,7 +628,7 @@ private struct PositionHeaderRow: View {
             Text("Цена").frame(width: 92, alignment: .trailing)
             Text("Кол-во").frame(width: 78, alignment: .trailing)
             Text("Стоимость").frame(width: 112, alignment: .trailing)
-            Text("P/L").frame(width: 112, alignment: .trailing)
+            Text("Прибыль").frame(width: 112, alignment: .trailing)
             Text("Доля").frame(width: 86, alignment: .trailing)
         }
         .font(.caption.weight(.semibold))
@@ -975,55 +693,5 @@ private struct PositionRow: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 10)
         .background(isSelected ? Color.accentColor.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-}
-
-private struct InspectorSection<Content: View>: View {
-    var title: String
-    @ViewBuilder var content: Content
-
-    init(_ title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            content
-        }
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-private struct InspectorMetric: View {
-    var title: String
-    var value: String
-    var tone: Color = .primary
-
-    init(_ title: String, _ value: String, tone: Color = .primary) {
-        self.title = title
-        self.value = value
-        self.tone = tone
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(tone)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

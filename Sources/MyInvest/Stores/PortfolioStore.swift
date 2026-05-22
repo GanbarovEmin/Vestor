@@ -181,6 +181,40 @@ final class PortfolioStore: ObservableObject {
         )
     }
 
+    var dayMovementSummary: PortfolioDayMovementSummary {
+        let movers = positions.compactMap { position -> PortfolioDayMover? in
+            guard let quote = quotesByTicker[position.ticker],
+                  let previousClose = quote.previousClose,
+                  previousClose > 0
+            else { return nil }
+
+            let priceChange = quote.price - previousClose
+            return PortfolioDayMover(
+                ticker: position.ticker,
+                companyName: position.companyName,
+                amount: position.shares * priceChange,
+                percent: priceChange / previousClose,
+                priceChange: priceChange
+            )
+        }
+        .sorted { abs($0.amount) > abs($1.amount) }
+
+        guard !movers.isEmpty else { return .empty }
+
+        let totalAmount = movers.reduce(0) { $0 + $1.amount }
+        let previousValue = securitiesMarketValue - totalAmount
+        let totalPercent = previousValue == 0 ? 0 : totalAmount / previousValue
+
+        return PortfolioDayMovementSummary(
+            movers: movers,
+            totalAmount: totalAmount,
+            totalPercent: totalPercent,
+            bestByPercent: movers.max { $0.percent < $1.percent },
+            worstByPercent: movers.min { $0.percent < $1.percent },
+            largestDollarContributor: movers.max { abs($0.amount) < abs($1.amount) }
+        )
+    }
+
     var projectedPlanSnapshots: [ProjectedPlanSnapshot] {
         [6, 12, 24].map { horizon in
             let cutoff = Calendar.current.date(byAdding: .month, value: horizon, to: Date()) ?? Date()
@@ -192,12 +226,17 @@ final class PortfolioStore: ObservableObject {
             }
             let total = max(1, values.values.reduce(0, +) + max(0, cashBalance - projectedInvested))
             let allocations = values.mapValues { $0 / total }
+            let projectedCashNeed = max(0, projectedInvested - cashBalance)
             return ProjectedPlanSnapshot(
                 horizonMonths: horizon,
                 projectedInvestedAmount: projectedInvested,
-                projectedCashNeed: max(0, projectedInvested - cashBalance),
+                projectedCashNeed: projectedCashNeed,
                 projectedAllocations: allocations,
-                warnings: []
+                warnings: purchasePlanWarnings(
+                    purchases: futurePurchases,
+                    projectedCashNeed: projectedCashNeed,
+                    allocations: allocations
+                )
             )
         }
     }
@@ -763,6 +802,48 @@ final class PortfolioStore: ObservableObject {
         return Array(results.prefix(20))
     }
 
+    func assetAllocation(for position: PortfolioPosition, includingCash: Bool = false) -> Double {
+        let total = includingCash ? totalMarketValue : securitiesMarketValue
+        return total == 0 ? 0 : position.marketValue / total
+    }
+
+    func assetAllocation(for ticker: String, includingCash: Bool = false) -> Double {
+        guard let position = positions.first(where: { $0.ticker == ticker.normalizedTicker }) else { return 0 }
+        return assetAllocation(for: position, includingCash: includingCash)
+    }
+
+    func portfolioChartSeries(for range: PortfolioChartRange) -> [PortfolioChartPoint] {
+        guard !history.isEmpty else { return [] }
+
+        let filteredHistory: [PortfolioSnapshot]
+        if let cutoff = range.cutoffDate(relativeTo: history.last?.date ?? Date()) {
+            let filtered = history.filter { $0.date >= cutoff }
+            filteredHistory = filtered.count >= 2 ? filtered : Array(history.suffix(2))
+        } else {
+            filteredHistory = history
+        }
+
+        let transactionEvents = Dictionary(grouping: transactions.filter(\.kind.affectsPosition)) {
+            chartDayKey(for: $0.purchaseDate)
+        }
+
+        let points = filteredHistory.map { snapshot in
+            let events = transactionEvents[chartDayKey(for: snapshot.date)] ?? []
+            let tickers = Array(Set(events.map(\.ticker).filter { !$0.isEmpty })).sorted()
+            return PortfolioChartPoint(
+                date: snapshot.date,
+                marketValue: snapshot.marketValue,
+                investedAmount: snapshot.investedAmount,
+                gainLoss: snapshot.gainLoss,
+                gainLossPercent: snapshot.gainLossPercent,
+                transactionAmount: events.reduce(0) { $0 + $1.displayAmount },
+                transactionTickers: tickers
+            )
+        }
+
+        return sampledChartPoints(points, range: range)
+    }
+
     func assetDetail(for ticker: String) -> AssetDetailSummary? {
         let symbol = ticker.normalizedTicker
         guard !symbol.isEmpty else { return nil }
@@ -772,18 +853,25 @@ final class PortfolioStore: ObservableObject {
             return nil
         }
         let quote = quotesByTicker[symbol]
-        let dividends = relatedTransactions.filter { $0.kind == .dividend }.reduce(0) { $0 + $1.displayAmount }
+        let dividendTransactions = relatedTransactions.filter { $0.kind == .dividend }
+        let dividends = dividendTransactions.reduce(0) { $0 + $1.displayAmount }
         let marketValue = position?.marketValue ?? 0
         return AssetDetailSummary(
             ticker: symbol,
             companyName: position?.companyName ?? bestCompanyName(for: symbol) ?? symbol,
+            shares: position?.shares ?? 0,
+            averageCost: position?.averageCost ?? 0,
             currentPrice: quote?.price ?? position?.currentPrice,
             dayChange: quote?.dayChange,
+            dayChangePercent: quote?.dayChangePercent,
             marketValue: marketValue,
-            allocation: totalMarketValue == 0 ? 0 : marketValue / totalMarketValue,
+            allocation: assetAllocation(for: symbol, includingCash: false),
             gainLoss: position?.gainLoss ?? 0,
+            gainLossPercent: position?.gainLossPercent ?? 0,
+            realizedGainLoss: position?.realizedGainLoss ?? 0,
             dividends: dividends,
-            transactions: relatedTransactions
+            transactions: relatedTransactions,
+            dividendTransactions: dividendTransactions
         )
     }
 
@@ -999,6 +1087,78 @@ final class PortfolioStore: ObservableObject {
         case (nil, nil):
             return nil
         }
+    }
+
+    private func chartDayKey(for date: Date) -> String {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return "\(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)"
+    }
+
+    private func sampledChartPoints(
+        _ points: [PortfolioChartPoint],
+        range: PortfolioChartRange
+    ) -> [PortfolioChartPoint] {
+        let maxPoints: Int
+        switch range {
+        case .week:
+            maxPoints = 16
+        case .month:
+            maxPoints = 45
+        case .sixMonths:
+            maxPoints = 80
+        case .year:
+            maxPoints = 96
+        case .all:
+            maxPoints = 120
+        }
+
+        guard points.count > maxPoints else { return points }
+
+        let step = max(1, Int(ceil(Double(points.count) / Double(maxPoints))))
+        var sampled: [PortfolioChartPoint] = []
+        var includedDays = Set<String>()
+
+        func include(_ point: PortfolioChartPoint) {
+            let key = chartDayKey(for: point.date)
+            guard includedDays.insert(key).inserted else { return }
+            sampled.append(point)
+        }
+
+        for (index, point) in points.enumerated() {
+            if index == 0 || index == points.count - 1 || index.isMultiple(of: step) || point.transactionAmount != 0 {
+                include(point)
+            }
+        }
+
+        return sampled.sorted { $0.date < $1.date }
+    }
+
+    private func purchasePlanWarnings(
+        purchases: [PlannedPurchase],
+        projectedCashNeed: Double,
+        allocations: [String: Double]
+    ) -> [String] {
+        var warnings: [String] = []
+
+        if projectedCashNeed > 0.000001 {
+            warnings.append("Нужно пополнить кэш на \(projectedCashNeed.formatted(AppFormatters.usd)).")
+        }
+
+        let calendar = Calendar.current
+        let groupedByTickerAndMonth = Dictionary(grouping: purchases) { purchase in
+            let components = calendar.dateComponents([.year, .month], from: purchase.scheduledDate)
+            return "\(purchase.ticker)-\(components.year ?? 0)-\(components.month ?? 0)"
+        }
+        if let repeated = groupedByTickerAndMonth.values.first(where: { $0.count > 1 })?.first {
+            warnings.append("Повтор \(repeated.ticker) в одном месяце.")
+        }
+
+        if let concentrated = allocations.max(by: { $0.value < $1.value }),
+           concentrated.value > 0.25 {
+            warnings.append("Доля \(concentrated.key) после покупок выше 25%.")
+        }
+
+        return Array(warnings.prefix(2))
     }
 
     private func goalProjectionPoints(

@@ -10,6 +10,7 @@ struct AssetDetailView: View {
     @EnvironmentObject private var store: PortfolioStore
     var ticker: String
     @State private var draftTransaction: InvestmentTransaction?
+    @State private var selectedRange: PortfolioChartRange = .year
 
     private var detail: AssetDetailSummary? {
         store.assetDetail(for: ticker)
@@ -22,6 +23,7 @@ struct AssetDetailView: View {
                     header(detail)
                     metrics(detail)
                     chart
+                    dividends(detail)
                     transactions(detail)
                 }
                 .padding(22)
@@ -60,7 +62,7 @@ struct AssetDetailView: View {
             Button {
                 AppleStocksIntegration.openTicker(detail.ticker)
             } label: {
-                Label("Акции", systemImage: "chart.line.uptrend.xyaxis")
+                Label("Открыть в Акциях", systemImage: "chart.line.uptrend.xyaxis")
             }
             .disabled(!AppleStocksIntegration.isAvailable)
             .help("Открыть \(detail.ticker) в приложении Акции")
@@ -69,9 +71,11 @@ struct AssetDetailView: View {
 
     private func metrics(_ detail: AssetDetailSummary) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-            MetricTile(title: "Цена", value: detail.currentPrice?.formatted(AppFormatters.price) ?? "-", detail: detail.dayChange?.formatted(AppFormatters.usd) ?? "day change", systemImage: "tag")
+            MetricTile(title: "Цена", value: detail.currentPrice?.formatted(AppFormatters.price) ?? "-", detail: dayChangeText(detail), systemImage: "tag")
+            MetricTile(title: "Средняя", value: detail.averageCost.formatted(AppFormatters.price), detail: detail.shares.formatted(AppFormatters.shares) + " шт.", systemImage: "sum")
             MetricTile(title: "Стоимость", value: detail.marketValue.formatted(AppFormatters.usd), detail: detail.allocation.formatted(AppFormatters.percent), systemImage: "briefcase")
-            MetricTile(title: "P/L", value: detail.gainLoss.formatted(AppFormatters.usd), detail: "нереализовано", systemImage: "arrow.up.right", tone: detail.gainLoss >= 0 ? .positive : .negative)
+            MetricTile(title: "Прибыль", value: detail.gainLoss.formatted(AppFormatters.usd), detail: detail.gainLossPercent.formatted(AppFormatters.percent), systemImage: "arrow.up.right", tone: detail.gainLoss >= 0 ? .positive : .negative)
+            MetricTile(title: "Реализовано", value: detail.realizedGainLoss.formatted(AppFormatters.usd), detail: "от продаж", systemImage: "checkmark.seal", tone: detail.realizedGainLoss >= 0 ? .positive : .negative)
             MetricTile(title: "Дивиденды", value: detail.dividends.formatted(AppFormatters.usd), detail: "получено", systemImage: "dollarsign.circle", tone: .positive)
         }
     }
@@ -79,21 +83,61 @@ struct AssetDetailView: View {
     private var chart: some View {
         GlassPanel {
             VStack(alignment: .leading, spacing: 12) {
-                Text("График цены")
-                    .font(.headline)
-                let prices = store.priceHistoryByTicker[ticker.normalizedTicker] ?? []
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("График цены")
+                            .font(.headline)
+                        Spacer()
+                        rangePicker
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("График цены")
+                            .font(.headline)
+                        rangePicker
+                    }
+                }
+
+                let prices = filteredPrices
                 if prices.isEmpty {
                     ContentUnavailableView("Нет истории цены", systemImage: "chart.line.uptrend.xyaxis")
                         .frame(height: 180)
                 } else {
-                    Chart(prices.suffix(260)) { price in
+                    Chart(prices) { price in
                         LineMark(x: .value("Дата", price.date), y: .value("Цена", price.close))
                             .foregroundStyle(.blue)
+                            .interpolationMethod(.linear)
+                            .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 5))
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading) { value in
+                            AxisGridLine()
+                                .foregroundStyle(.secondary.opacity(0.10))
+                            AxisValueLabel {
+                                if let amount = value.as(Double.self) {
+                                    Text(amount.formatted(AppFormatters.price))
+                                }
+                            }
+                        }
                     }
                     .frame(height: 220)
                 }
             }
         }
+    }
+
+    private var rangePicker: some View {
+        Picker("Период", selection: $selectedRange) {
+            ForEach(PortfolioChartRange.allCases) { range in
+                Text(range.title).tag(range)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .frame(width: 260)
     }
 
     private func transactions(_ detail: AssetDetailSummary) -> some View {
@@ -120,6 +164,62 @@ struct AssetDetailView: View {
                 }
             }
         }
+    }
+
+    private func dividends(_ detail: AssetDetailSummary) -> some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Дивиденды по активу")
+                        .font(.headline)
+                    Spacer()
+                    Text(detail.dividends.formatted(AppFormatters.usd))
+                        .font(.headline)
+                        .foregroundStyle(.green)
+                        .monospacedDigit()
+                }
+
+                if detail.dividendTransactions.isEmpty {
+                    Text("Выплат по этому активу пока нет.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(detail.dividendTransactions.prefix(8)) { transaction in
+                        HStack {
+                            Text(transaction.purchaseDate, format: AppFormatters.compactDate)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 110, alignment: .leading)
+                            Text(transaction.notes.isEmpty ? "Дивиденд" : transaction.notes)
+                                .lineLimit(1)
+                            Spacer()
+                            Text(transaction.displayAmount.formatted(AppFormatters.usd))
+                                .font(.headline)
+                                .foregroundStyle(.green)
+                                .monospacedDigit()
+                        }
+                        if transaction.id != detail.dividendTransactions.prefix(8).last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func dayChangeText(_ detail: AssetDetailSummary) -> String {
+        guard let change = detail.dayChange else { return "изменение за день" }
+        if let percent = detail.dayChangePercent {
+            return change.formatted(AppFormatters.usd) + " • " + percent.formatted(AppFormatters.percent)
+        }
+        return change.formatted(AppFormatters.usd)
+    }
+
+    private var filteredPrices: [HistoricalPrice] {
+        let prices = store.priceHistoryByTicker[ticker.normalizedTicker] ?? []
+        guard let cutoff = selectedRange.cutoffDate(relativeTo: prices.last?.date ?? Date()) else {
+            return prices
+        }
+        let filtered = prices.filter { $0.date >= cutoff }
+        return filtered.count >= 2 ? filtered : Array(prices.suffix(2))
     }
 }
 

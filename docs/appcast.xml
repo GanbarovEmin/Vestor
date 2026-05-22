@@ -6,24 +6,23 @@
     <description>Vestor macOS app update feed.</description>
     <language>en</language>
     <item>
-      <title>Vestor 0.1.0</title>
-      <sparkle:version>1</sparkle:version>
-      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <title>Vestor 0.1.1</title>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-# Vestor 0.1.0<br />
+# Vestor 0.1.1<br />
 <br />
-Initial public QA build.<br />
-<br />
-- Portfolio dashboard, goals, planned purchases, dividends, transactions, analytics, notifications, and settings.<br />
-- Local-first data storage in the user's Application Support folder.<br />
-- GitHub Releases based DMG distribution.<br />
-- Sparkle update feed prepared for future app updates.<br />
+- Improved overview chart responsiveness by simplifying chart interaction and reducing dense historical series.<br />
+- Replaced misleading large portfolio-period percentage with period result and invested-change labels.<br />
+- Added shared day-movement, allocation, and chart-series store calculations for consistent dashboard, analytics, and asset detail views.<br />
+- Added purchase-plan warnings for cash shortfall, duplicate planned buys, and concentration risk.<br />
+- Hardened local QA/release packaging so debug bundles include version metadata and Sparkle release metadata.<br />
       ]]></description>
-      <pubDate>Fri, 22 May 2026 08:09:58 +0000</pubDate>
-      <enclosure url="https://github.com/GanbarovEmin/Vestor/releases/download/v0.1.0/Vestor-0.1.0.dmg"
-                 sparkle:edSignature="1EvYShTivgqLnMS0zu7NzPvVwqLkscNoavmlvpbsMsWhCT8iusm8s6eIqiOa884JYseLP/p7wA8PD75R4NPhCw=="
-                 length="4083808"
+      <pubDate>Fri, 22 May 2026 10:26:58 +0000</pubDate>
+      <enclosure url="https://github.com/GanbarovEmin/Vestor/releases/download/v0.1.1/Vestor-0.1.1.dmg"
+                 sparkle:edSignature="HIvqwekbC6SxwFvTp5cvMTcdIlRrEBjK7PVURfZLdQ0RV5ZTzX7OJt73rcn8ZYiAnIb4jWPsVPY47DLO1husBw=="
+                 length="4105508"
                  type="application/octet-stream" />
     </item>
   </channel>

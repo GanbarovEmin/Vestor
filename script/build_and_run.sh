@@ -6,9 +6,10 @@ PRODUCT_NAME="MyInvest"
 APP_DISPLAY_NAME="Vestor"
 BUNDLE_ID="com.vestor.desktop"
 MIN_SYSTEM_VERSION="14.0"
+UPDATE_FEED_URL="https://ganbarovemin.github.io/Vestor/appcast.xml"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIST_DIR="$ROOT_DIR/dist"
+DIST_DIR="${VESTOR_RUN_DIR:-${TMPDIR:-/tmp}/vestor-debug-${UID:-local}}"
 APP_BUNDLE="$DIST_DIR/$APP_DISPLAY_NAME.app"
 LEGACY_APP_BUNDLE="$DIST_DIR/$PRODUCT_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
@@ -17,10 +18,22 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 APP_BINARY="$APP_MACOS/$PRODUCT_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+VERSION_JSON="$ROOT_DIR/release/version.json"
+PUBLIC_KEY_FILE="$ROOT_DIR/release/sparkle-public-ed-key.txt"
 
 cd "$ROOT_DIR"
 
 pkill -x "$PRODUCT_NAME" >/dev/null 2>&1 || true
+
+VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$VERSION_JSON")"
+BUILD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["build"])' "$VERSION_JSON")"
+PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
+if [[ -z "$PUBLIC_ED_KEY" && -f "$PUBLIC_KEY_FILE" ]]; then
+  PUBLIC_ED_KEY="$(tr -d '\n' < "$PUBLIC_KEY_FILE")"
+fi
+if [[ -z "$PUBLIC_ED_KEY" ]]; then
+  PUBLIC_ED_KEY="UNCONFIGURED-SPARKLE-PUBLIC-KEY"
+fi
 
 swift build
 BUILD_BINARY="$(swift build --show-bin-path)/$PRODUCT_NAME"
@@ -37,7 +50,7 @@ ditto --noextattr --noqtn "$ROOT_DIR/Resources/Brand/VestorLogo.png" "$APP_RESOU
 
 SPARKLE_FRAMEWORK="$(find "$ROOT_DIR/.build" -path '*Sparkle.framework' -type d | grep -E 'macos|Sparkle.framework$' | head -n 1 || true)"
 if [[ -n "$SPARKLE_FRAMEWORK" ]]; then
-  ditto --noextattr --noqtn "$SPARKLE_FRAMEWORK" "$APP_FRAMEWORKS/Sparkle.framework"
+  ditto --norsrc --noextattr --noqtn "$SPARKLE_FRAMEWORK" "$APP_FRAMEWORKS/Sparkle.framework"
   if ! otool -l "$APP_BINARY" | grep -q '@executable_path/../Frameworks'; then
     install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BINARY"
   fi
@@ -60,15 +73,25 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_DISPLAY_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$BUILD</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+  <key>SUEnableInstallerLauncherService</key>
+  <true/>
   <key>SUFeedURL</key>
-  <string>https://ganbarovemin.github.io/Vestor/appcast.xml</string>
+  <string>$UPDATE_FEED_URL</string>
+  <key>SUPublicEDKey</key>
+  <string>$PUBLIC_ED_KEY</string>
 </dict>
 </plist>
 PLIST
+
+plutil -lint "$INFO_PLIST" >/dev/null
 
 if command -v codesign >/dev/null; then
   xattr -cr "$APP_BUNDLE" >/dev/null 2>&1 || true

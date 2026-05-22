@@ -48,7 +48,7 @@ if [[ -z "$SPARKLE_FRAMEWORK" ]]; then
   echo "Sparkle.framework not found under .build" >&2
   exit 1
 fi
-ditto --noextattr --noqtn "$SPARKLE_FRAMEWORK" "$APP_FRAMEWORKS/Sparkle.framework"
+ditto --norsrc --noextattr --noqtn "$SPARKLE_FRAMEWORK" "$APP_FRAMEWORKS/Sparkle.framework"
 
 if ! otool -l "$APP_BINARY" | grep -q '@executable_path/../Frameworks'; then
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BINARY"

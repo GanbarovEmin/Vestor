@@ -154,6 +154,105 @@ final class PriorityFeaturesTests: XCTestCase {
         XCTAssertNil(AppSection(rawValue: "watchlist"))
     }
 
+    func testPortfolioChartWeekRangeUsesSevenDaysAndRussianTitle() {
+        let reference = DateHelpers.csvDayFormatter.date(from: "2026-05-22")!
+        let cutoff = PortfolioChartRange.week.cutoffDate(relativeTo: reference)
+
+        XCTAssertEqual(PortfolioChartRange.week.title, "1Н")
+        XCTAssertEqual(Calendar.current.dateComponents([.day], from: cutoff!, to: reference).day, 7)
+    }
+
+    @MainActor
+    func testDayMovementAllocationChartSeriesAndAssetDetailUseSharedStoreAggregates() throws {
+        let urls = temporaryStoreURLs()
+        let aaplDate = DateHelpers.csvDayFormatter.date(from: "2026-01-01")!
+        let msftDate = DateHelpers.csvDayFormatter.date(from: "2026-01-05")!
+        let cache = MarketDataCache(
+            quotesByTicker: [
+                "AAPL": MarketQuote(ticker: "AAPL", price: 110, previousClose: 100, asOf: msftDate),
+                "MSFT": MarketQuote(ticker: "MSFT", price: 90, previousClose: 100, asOf: msftDate)
+            ],
+            priceHistoryByTicker: [
+                "AAPL": [
+                    HistoricalPrice(ticker: "AAPL", date: aaplDate, close: 80),
+                    HistoricalPrice(ticker: "AAPL", date: msftDate, close: 110)
+                ],
+                "MSFT": [
+                    HistoricalPrice(ticker: "MSFT", date: msftDate, close: 90)
+                ]
+            ],
+            refreshedAt: msftDate
+        )
+        try FileManager.default.createDirectory(at: urls.cache.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONCoders.encoder.encode(cache).write(to: urls.cache, options: [.atomic])
+
+        let store = PortfolioStore(
+            fileURL: urls.portfolio,
+            plannedPurchasesURL: urls.plannedPurchases,
+            setupURL: urls.setup,
+            importPresetsURL: urls.importPresets,
+            journalURL: urls.journal,
+            goalsURL: urls.goals,
+            cacheURL: urls.cache
+        )
+        store.deleteTransactions(withIDs: Set(store.transactions.map(\.id)))
+        store.add(InvestmentTransaction(kind: .buy, ticker: "AAPL", companyName: "Apple Inc.", purchaseDate: aaplDate, shares: 2, purchasePrice: 80, commission: 0))
+        store.add(InvestmentTransaction(kind: .buy, ticker: "MSFT", companyName: "Microsoft", purchaseDate: msftDate, shares: 1, purchasePrice: 100, commission: 0))
+
+        let summary = store.dayMovementSummary
+        XCTAssertEqual(summary.totalAmount, 10, accuracy: 0.0001)
+        XCTAssertEqual(summary.totalPercent, 10.0 / 300.0, accuracy: 0.0001)
+        XCTAssertEqual(summary.bestByPercent?.ticker, "AAPL")
+        XCTAssertEqual(summary.worstByPercent?.ticker, "MSFT")
+        XCTAssertEqual(summary.largestDollarContributor?.ticker, "AAPL")
+        XCTAssertEqual(store.assetAllocation(for: "AAPL"), 220.0 / 310.0, accuracy: 0.0001)
+
+        let series = store.portfolioChartSeries(for: .all)
+        XCTAssertTrue(series.contains {
+            Calendar.current.isDate($0.date, inSameDayAs: aaplDate)
+                && $0.transactionTickers == ["AAPL"]
+                && $0.transactionAmount == 160
+        })
+        XCTAssertTrue(series.contains {
+            Calendar.current.isDate($0.date, inSameDayAs: msftDate)
+                && $0.transactionTickers == ["MSFT"]
+                && $0.transactionAmount == 100
+        })
+
+        let detail = store.assetDetail(for: "AAPL")
+        XCTAssertEqual(detail?.dayChangePercent ?? 0, 0.10, accuracy: 0.0001)
+        XCTAssertEqual(detail?.averageCost ?? 0, 80, accuracy: 0.0001)
+        XCTAssertEqual(detail?.gainLossPercent ?? 0, 60.0 / 160.0, accuracy: 0.0001)
+    }
+
+    @MainActor
+    func testPortfolioChartSeriesDownsamplesLongRangesButKeepsTradeDays() {
+        let store = cleanProjectionStore()
+        let firstDate = DateHelpers.csvDayFormatter.date(from: "2024-01-03")!
+        let secondDate = DateHelpers.csvDayFormatter.date(from: "2024-04-17")!
+        store.add(InvestmentTransaction(kind: .buy, ticker: "AAPL", companyName: "Apple Inc.", purchaseDate: firstDate, shares: 1, purchasePrice: 100, commission: 0))
+        store.add(InvestmentTransaction(kind: .buy, ticker: "MSFT", companyName: "Microsoft", purchaseDate: secondDate, shares: 1, purchasePrice: 120, commission: 0))
+
+        let rawCount = store.history.count
+        let series = store.portfolioChartSeries(for: .all)
+
+        XCTAssertGreaterThan(rawCount, 160)
+        XCTAssertLessThan(series.count, rawCount)
+        XCTAssertLessThanOrEqual(series.count, 130)
+        XCTAssertEqual(series.first?.date, store.history.first?.date)
+        XCTAssertEqual(series.last?.date, store.history.last?.date)
+        XCTAssertTrue(series.contains {
+            Calendar.current.isDate($0.date, inSameDayAs: firstDate)
+                && $0.transactionTickers == ["AAPL"]
+                && $0.transactionAmount == 100
+        })
+        XCTAssertTrue(series.contains {
+            Calendar.current.isDate($0.date, inSameDayAs: secondDate)
+                && $0.transactionTickers == ["MSFT"]
+                && $0.transactionAmount == 120
+        })
+    }
+
     @MainActor
     func testCapitalCompositionExcludesDividendsAsSeparateCapitalSlice() {
         let store = cleanProjectionStore()
@@ -168,6 +267,23 @@ final class PriorityFeaturesTests: XCTestCase {
         XCTAssertEqual(slices.first { $0.title == "Активы" }?.value ?? 0, 400, accuracy: 0.0001)
         XCTAssertEqual(slices.first { $0.title == "Кэш" }?.value ?? 0, 610, accuracy: 0.0001)
         XCTAssertFalse(slices.contains { $0.title == "Дивиденды" })
+    }
+
+    @MainActor
+    func testProjectedPlanSnapshotsSurfaceCashAndDuplicateWarnings() {
+        let store = cleanProjectionStore()
+        let date = DateHelpers.csvDayFormatter.date(from: "2026-01-01")!
+        let nextMonth = Calendar.current.date(byAdding: .month, value: 1, to: Date())!
+        store.add(InvestmentTransaction(kind: .deposit, ticker: "", companyName: "", purchaseDate: date, shares: 0, purchasePrice: 0, commission: 0, cashAmount: 1_000))
+        store.add(InvestmentTransaction(kind: .buy, ticker: "AAPL", companyName: "Apple Inc.", purchaseDate: date, shares: 8, purchasePrice: 100, commission: 0))
+        store.addPlannedPurchase(PlannedPurchase(scheduledDate: nextMonth, ticker: "QQQ", companyName: "Invesco QQQ", plannedAmount: 180))
+        store.addPlannedPurchase(PlannedPurchase(scheduledDate: nextMonth, ticker: "QQQ", companyName: "Invesco QQQ", plannedAmount: 180))
+
+        let snapshot = store.projectedPlanSnapshots.first!
+
+        XCTAssertEqual(snapshot.projectedCashNeed, 160, accuracy: 0.0001)
+        XCTAssertTrue(snapshot.warnings.contains { $0.contains("Нужно пополнить кэш") })
+        XCTAssertTrue(snapshot.warnings.contains { $0.contains("Повтор QQQ") })
     }
 
     @MainActor

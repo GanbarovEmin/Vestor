@@ -261,6 +261,80 @@ struct ProjectedPlanSnapshot: Identifiable, Hashable {
     var warnings: [String]
 }
 
+enum PortfolioChartRange: String, CaseIterable, Identifiable {
+    case week
+    case month
+    case sixMonths
+    case year
+    case all
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .week: "1Н"
+        case .month: "1М"
+        case .sixMonths: "6М"
+        case .year: "1Г"
+        case .all: "Все"
+        }
+    }
+
+    func cutoffDate(relativeTo date: Date) -> Date? {
+        let calendar = Calendar.current
+        switch self {
+        case .week:
+            return calendar.date(byAdding: .day, value: -7, to: date)
+        case .month:
+            return calendar.date(byAdding: .month, value: -1, to: date)
+        case .sixMonths:
+            return calendar.date(byAdding: .month, value: -6, to: date)
+        case .year:
+            return calendar.date(byAdding: .year, value: -1, to: date)
+        case .all:
+            return nil
+        }
+    }
+}
+
+struct PortfolioDayMover: Identifiable, Hashable {
+    var id: String { ticker }
+    var ticker: String
+    var companyName: String
+    var amount: Double
+    var percent: Double
+    var priceChange: Double
+}
+
+struct PortfolioDayMovementSummary: Hashable {
+    var movers: [PortfolioDayMover]
+    var totalAmount: Double
+    var totalPercent: Double
+    var bestByPercent: PortfolioDayMover?
+    var worstByPercent: PortfolioDayMover?
+    var largestDollarContributor: PortfolioDayMover?
+
+    static let empty = PortfolioDayMovementSummary(
+        movers: [],
+        totalAmount: 0,
+        totalPercent: 0,
+        bestByPercent: nil,
+        worstByPercent: nil,
+        largestDollarContributor: nil
+    )
+}
+
+struct PortfolioChartPoint: Identifiable, Hashable {
+    var id: Date { date }
+    var date: Date
+    var marketValue: Double
+    var investedAmount: Double
+    var gainLoss: Double
+    var gainLossPercent: Double
+    var transactionAmount: Double
+    var transactionTickers: [String]
+}
+
 enum FinancialGoalProjectionStatus: String, Hashable {
     case notConfigured
     case achieved
@@ -314,13 +388,19 @@ struct PortfolioSearchResult: Identifiable, Hashable {
 struct AssetDetailSummary: Hashable {
     var ticker: String
     var companyName: String
+    var shares: Double
+    var averageCost: Double
     var currentPrice: Double?
     var dayChange: Double?
+    var dayChangePercent: Double?
     var marketValue: Double
     var allocation: Double
     var gainLoss: Double
+    var gainLossPercent: Double
+    var realizedGainLoss: Double
     var dividends: Double
     var transactions: [InvestmentTransaction]
+    var dividendTransactions: [InvestmentTransaction]
 }
 
 extension String {

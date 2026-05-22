@@ -1,13 +1,6 @@
 import Charts
 import SwiftUI
 
-private struct PortfolioDayMover: Identifiable, Hashable {
-    var id: String { ticker }
-    var ticker: String
-    var amount: Double
-    var percent: Double
-}
-
 private struct CompactMoverRow: View {
     var title: String
     var mover: PortfolioDayMover?
@@ -195,34 +188,6 @@ struct AnalyticsView: View {
         store.totalMarketValue == 0 ? 0 : store.cashBalance / store.totalMarketValue
     }
 
-    private var dayMovers: [PortfolioDayMover] {
-        store.positions.compactMap { position in
-            guard let quote = store.quotesByTicker[position.ticker],
-                  let previousClose = quote.previousClose,
-                  previousClose > 0
-            else { return nil }
-
-            let priceChange = quote.price - previousClose
-            return PortfolioDayMover(
-                ticker: position.ticker,
-                amount: position.shares * priceChange,
-                percent: priceChange / previousClose
-            )
-        }
-    }
-
-    private var bestDayMover: PortfolioDayMover? {
-        dayMovers.max { $0.percent < $1.percent }
-    }
-
-    private var worstDayMover: PortfolioDayMover? {
-        dayMovers.min { $0.percent < $1.percent }
-    }
-
-    private var largestPositiveContributor: PortfolioDayMover? {
-        dayMovers.max { $0.amount < $1.amount }
-    }
-
     private var performancePanel: some View {
         GlassPanel {
             VStack(alignment: .leading, spacing: 12) {
@@ -242,33 +207,34 @@ struct AnalyticsView: View {
     }
 
     private func allocation(for position: PortfolioPosition) -> Double {
-        store.securitiesMarketValue == 0 ? 0 : position.marketValue / store.securitiesMarketValue
+        store.assetAllocation(for: position)
     }
 
     private var dailyMoversPanel: some View {
         GlassPanel {
+            let summary = store.dayMovementSummary
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Label("Движение за день", systemImage: "arrow.up.arrow.down")
                         .font(.headline)
                     Spacer()
-                    Text(dayMovers.isEmpty ? "нет данных" : "\(dayMovers.count)")
+                    Text(summary.movers.isEmpty ? "нет данных" : "\(summary.movers.count)")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
 
-                if dayMovers.isEmpty {
+                if summary.movers.isEmpty {
                     Text("Для расчета нужны текущая цена и previous close по активам.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 6)
                 } else {
-                    CompactMoverRow(title: "Плюс дня", mover: bestDayMover, fallbackTone: .green)
+                    CompactMoverRow(title: "Плюс дня", mover: summary.bestByPercent, fallbackTone: .green)
                     Divider()
-                    CompactMoverRow(title: "Минус дня", mover: worstDayMover, fallbackTone: .red)
+                    CompactMoverRow(title: "Минус дня", mover: summary.worstByPercent, fallbackTone: .red)
                     Divider()
-                    CompactMoverRow(title: "Вклад в итог дня", mover: largestPositiveContributor, fallbackTone: .green)
+                    CompactMoverRow(title: "Вклад в итог дня", mover: summary.largestDollarContributor, fallbackTone: .green)
                 }
             }
         }
@@ -393,7 +359,7 @@ struct NotificationsView: View {
 
                 GlassPanel {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Data Health")
+                        Text("Проверка данных")
                             .font(.headline)
 
                         NotificationRow(

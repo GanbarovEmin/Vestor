@@ -188,7 +188,7 @@ struct PurchaseQueueView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text("\(snapshot.horizonMonths) месяцев")
                 .font(.headline)
-            Text(snapshot.warnings.first ?? "Открытые покупки учтены в прогнозе цели")
+            Text(snapshot.warnings.isEmpty ? "Открытые покупки учтены в прогнозе цели" : snapshot.warnings.joined(separator: " • "))
                 .font(.caption)
                 .foregroundStyle(snapshot.warnings.isEmpty ? Color.secondary : Color.orange)
                 .lineLimit(2)

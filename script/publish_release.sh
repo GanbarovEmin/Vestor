@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+MODE="${1:-publish}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="GanbarovEmin/Vestor"
 PAGES_BASE="https://ganbarovemin.github.io/Vestor"
@@ -66,6 +67,7 @@ XML
 
 python3 - "$ROOT_DIR/docs/index.html" "$DMG_URL" "$VERSION" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
@@ -74,8 +76,21 @@ version = sys.argv[3]
 text = path.read_text()
 text = text.replace("{{LATEST_DMG_URL}}", dmg_url)
 text = text.replace("{{LATEST_VERSION}}", version)
+text = re.sub(
+    r"https://github\.com/GanbarovEmin/Vestor/releases/download/v[^\"']+/Vestor-[^\"']+\.dmg",
+    dmg_url,
+    text,
+)
+text = re.sub(r"Download Vestor [0-9]+(?:\.[0-9]+)*", f"Download Vestor {version}", text)
+text = re.sub(r"<strong>[0-9]+(?:\.[0-9]+)*</strong>", f"<strong>{version}</strong>", text, count=1)
+text = re.sub(r"<span>Vestor [0-9]+(?:\.[0-9]+)*</span>", f"<span>Vestor {version}</span>", text)
 path.write_text(text)
 PY
+
+if [[ "$MODE" == "--prepare-only" || "$MODE" == "prepare" ]]; then
+  echo "$APPCAST"
+  exit 0
+fi
 
 if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   gh release create "$TAG" "$DMG_PATH" "$SHA_PATH" \
