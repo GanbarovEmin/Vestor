@@ -20,10 +20,10 @@ Initial public QA build.<br />
 - GitHub Releases based DMG distribution.<br />
 - Sparkle update feed prepared for future app updates.<br />
       ]]></description>
-      <pubDate>Fri, 22 May 2026 08:04:52 +0000</pubDate>
+      <pubDate>Fri, 22 May 2026 08:09:58 +0000</pubDate>
       <enclosure url="https://github.com/GanbarovEmin/Vestor/releases/download/v0.1.0/Vestor-0.1.0.dmg"
-                 sparkle:edSignature="HZNR0vrYyrF2w/TruAXmmZNmLgCBpTa5QkoRseDXpNifzXUTkjqFXBo0sWIBlJOhzKEOOZldzn5Xmw6NhFpEAA=="
-                 length="4089638"
+                 sparkle:edSignature="1EvYShTivgqLnMS0zu7NzPvVwqLkscNoavmlvpbsMsWhCT8iusm8s6eIqiOa884JYseLP/p7wA8PD75R4NPhCw=="
+                 length="4083808"
                  type="application/octet-stream" />
     </item>
   </channel>
