@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vestor for macOS</title>
     <meta name="description" content="A local-first macOS portfolio tracker for long-term investors.">
+    <meta property="og:title" content="Vestor for macOS">
+    <meta property="og:description" content="Track portfolio performance, goals, planned purchases, dividends, and updates from a local-first Mac app.">
+    <meta property="og:image" content="https://ganbarovemin.github.io/Vestor/assets/screenshots/overview.png">
+    <meta property="og:type" content="website">
+    <meta name="theme-color" content="#0d243f">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -12,50 +17,91 @@
       <a class="brand" href="./" aria-label="Vestor home">
         <img src="assets/vestor-logo.png" alt="Vestor">
       </a>
-      <nav>
+      <nav aria-label="Primary navigation">
+        <a href="#screens">Screens</a>
+        <a href="#updates">Updates</a>
         <a href="https://github.com/GanbarovEmin/Vestor/releases">Releases</a>
-        <a href="appcast.xml">Appcast</a>
         <a href="https://github.com/GanbarovEmin/Vestor">GitHub</a>
       </nav>
     </header>
 
     <main>
-      <section class="hero">
-        <div class="hero-copy">
+      <section class="hero" aria-label="Vestor overview">
+        <img class="hero-image" src="assets/screenshots/overview.png" alt="Vestor portfolio overview dashboard">
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
           <p class="eyebrow">macOS portfolio tracker</p>
           <h1>Vestor</h1>
-          <p class="lead">Local-first portfolio tracking, goal projection, planned purchases, dividends, and market refreshes in one focused Mac app.</p>
+          <p class="lead">A local-first Mac app for tracking long-term portfolio value, goals, dividends, planned buys, transactions, and quote freshness.</p>
           <div class="actions">
             <a class="primary" href="https://github.com/GanbarovEmin/Vestor/releases/download/v0.1.0/Vestor-0.1.0.dmg">Download Vestor 0.1.0</a>
-            <a class="secondary" href="https://github.com/GanbarovEmin/Vestor/releases">View releases</a>
+            <a class="secondary" href="#screens">View real screens</a>
           </div>
-          <p class="note">First builds are unsigned QA DMGs. macOS may require Control-click, then Open.</p>
+          <p class="note">Unsigned QA DMG. On first launch macOS may require Control-click, then Open.</p>
         </div>
-        <img class="app-shot" src="assets/app-screenshot.png" alt="Vestor dashboard screenshot">
+      </section>
+
+      <section class="signal-row" aria-label="Core signals">
+        <div>
+          <span>Data model</span>
+          <strong>Local-first</strong>
+        </div>
+        <div>
+          <span>Distribution</span>
+          <strong>GitHub Releases</strong>
+        </div>
+        <div>
+          <span>Updates</span>
+          <strong>Sparkle appcast</strong>
+        </div>
+        <div>
+          <span>Current build</span>
+          <strong>0.1.0</strong>
+        </div>
+      </section>
+
+      <section class="intro">
+        <div>
+          <p class="eyebrow">Designed for repeat use</p>
+          <h2>Portfolio work without spreadsheet drift</h2>
+        </div>
+        <p>Vestor keeps the daily investment workflow in one native Mac surface: overview, goals, queue, history, dividends, analytics, notifications, settings, and updates.</p>
       </section>
 
       <section class="features" aria-label="Vestor features">
         <article>
-          <h2>Portfolio overview</h2>
-          <p>Track market value, cash, day movement, gain/loss, dividends, and data health from one dense dashboard.</p>
+          <h3>Portfolio overview</h3>
+          <p>Market value, day movement, gain/loss, cash, dividends, holdings, and data health are visible immediately.</p>
         </article>
         <article>
-          <h2>Goals and plans</h2>
-          <p>Project progress from current value, growth, dividend yield, and the planned purchase queue.</p>
+          <h3>Goal projection</h3>
+          <p>Projects the target portfolio date from current value, growth, dividend yield, and planned contributions.</p>
         </article>
         <article>
-          <h2>Local-first data</h2>
-          <p>Portfolio files, backups, import presets, and optional provider cookies stay on your Mac.</p>
+          <h3>Planned buys</h3>
+          <p>Keeps upcoming purchases as a first-class queue with dates, tickers, company names, and target amounts.</p>
+        </article>
+        <article>
+          <h3>Quote refresh</h3>
+          <p>Uses Yahoo Finance chart data and shows quote freshness, missing prices, and refresh state.</p>
+        </article>
+        <article>
+          <h3>Local records</h3>
+          <p>Portfolio files, backups, import presets, change journal, and optional provider cookie stay on the Mac.</p>
+        </article>
+        <article>
+          <h3>Auto-update path</h3>
+          <p>GitHub-hosted appcast and release DMGs prepare installed builds to detect future Vestor updates.</p>
         </article>
       </section>
 
-      <section class="screenshots" aria-label="Vestor screenshots">
+      <section class="screenshots" id="screens" aria-label="Vestor screenshots">
         <div class="section-heading">
-          <p class="eyebrow">Real app screens</p>
-          <h2>What Vestor looks like in use</h2>
+          <p class="eyebrow">Live capture</p>
+          <h2>Real screens from the running app</h2>
         </div>
         <div class="screenshot-grid">
-          <figure>
+          <figure class="wide">
             <img src="assets/screenshots/overview.png" alt="Vestor overview dashboard">
             <figcaption>Overview dashboard</figcaption>
           </figure>
@@ -85,11 +131,24 @@
           </figure>
         </div>
       </section>
+
+      <section class="release-strip" id="updates">
+        <div>
+          <p class="eyebrow">Install and updates</p>
+          <h2>Download now, update through the public feed later</h2>
+          <p>The first build is an unsigned QA DMG. Future releases will be published to GitHub Releases and announced through the Sparkle appcast.</p>
+        </div>
+        <div class="release-actions">
+          <a class="primary" href="https://github.com/GanbarovEmin/Vestor/releases/download/v0.1.0/Vestor-0.1.0.dmg">Download DMG</a>
+          <a class="secondary" href="appcast.xml">Open appcast.xml</a>
+        </div>
+      </section>
     </main>
 
     <footer>
-      <span>Vestor update feed:</span>
-      <a href="appcast.xml">appcast.xml</a>
+      <span>Vestor 0.1.0</span>
+      <a href="https://github.com/GanbarovEmin/Vestor/releases">Releases</a>
+      <a href="appcast.xml">Appcast</a>
     </footer>
   </body>
 </html>
