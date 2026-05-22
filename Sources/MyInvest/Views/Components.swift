@@ -118,15 +118,11 @@ enum MetricTone {
 extension View {
     @ViewBuilder
     func liquidGlassSurface(cornerRadius: CGFloat) -> some View {
-        if #available(macOS 26.0, *) {
-            self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-        } else {
-            self.background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(.quaternary, lineWidth: 1)
-                }
-        }
+        self.background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(.quaternary, lineWidth: 1)
+            }
     }
 }
 
