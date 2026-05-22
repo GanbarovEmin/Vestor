@@ -54,11 +54,17 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @EnvironmentObject private var store: PortfolioStore
-    @State private var selectedSectionRaw = AppSection.defaultSection.rawValue
+    @State private var selectedSectionRaw: String
     @State private var isAddingTransaction = false
     @State private var isAddingPlannedPurchase = false
     @State private var searchQuery = ""
     @State private var assetDetailRoute: AssetDetailRoute?
+
+    init() {
+        let requestedSection = ProcessInfo.processInfo.environment["VESTOR_INITIAL_SECTION"]
+        let initialSection = requestedSection.flatMap(AppSection.init(rawValue:)) ?? AppSection.defaultSection
+        _selectedSectionRaw = State(initialValue: initialSection.rawValue)
+    }
 
     private var selectedSection: AppSection {
         get { AppSection(rawValue: selectedSectionRaw) ?? AppSection.defaultSection }

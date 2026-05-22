@@ -134,12 +134,54 @@ h1 {
   box-shadow: 0 24px 70px rgba(16, 34, 59, 0.18);
 }
 
-.features {
+.features,
+.screenshots {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   max-width: 1180px;
   margin: 40px auto 0;
+}
+
+.screenshots {
+  display: block;
+  margin-top: 56px;
+}
+
+.section-heading {
+  margin-bottom: 18px;
+}
+
+.section-heading h2 {
+  font-size: 32px;
+}
+
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+figure {
+  margin: 0;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+figure img {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+figcaption {
+  padding: 10px 4px 2px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
 }
 
 article {
@@ -180,7 +222,8 @@ footer {
   }
 
   .hero,
-  .features {
+  .features,
+  .screenshot-grid {
     grid-template-columns: 1fr;
   }
 

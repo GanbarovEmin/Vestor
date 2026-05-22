@@ -4,6 +4,8 @@ dist/
 DerivedData/
 *.xcuserdata/
 screenshots/
+!docs/assets/screenshots/
+!docs/assets/screenshots/*.png
 release/sparkle-private*.txt
 release/*.secret
 *.dmg

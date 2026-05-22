@@ -14,6 +14,26 @@ Vestor is a macOS portfolio tracker for long-term investors. It keeps portfolio 
 - Local-first storage in the user's macOS Application Support folder.
 - Sparkle-powered update feed served from GitHub Pages, with DMG assets hosted on GitHub Releases.
 
+## Screenshots
+
+These screenshots are captured from a live Vestor app run.
+
+| Overview | Goals |
+| --- | --- |
+| ![Overview dashboard](docs/assets/screenshots/overview.png) | ![Goals and projection](docs/assets/screenshots/goals.png) |
+
+| Purchase queue | Transactions |
+| --- | --- |
+| ![Planned purchase queue](docs/assets/screenshots/purchase-queue.png) | ![Transaction history](docs/assets/screenshots/transactions.png) |
+
+| Dividends | Analytics |
+| --- | --- |
+| ![Dividends](docs/assets/screenshots/dividends.png) | ![Analytics](docs/assets/screenshots/analytics.png) |
+
+| Settings |
+| --- |
+| ![Settings and updates](docs/assets/screenshots/settings.png) |
+
 ## Install
 
 Download the latest QA DMG from the [Vestor releases](https://github.com/GanbarovEmin/Vestor/releases).
